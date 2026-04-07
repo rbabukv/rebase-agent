@@ -46,9 +46,14 @@ onto the current upstream code.
 logically coherent. No leftover conflict markers.
 
 ## Output format:
-First, output the fully resolved file content.
-Then, on a new line after the file content, output exactly this marker followed \
-by your confidence assessment:
+IMPORTANT: Do NOT include any reasoning, analysis, or explanation in your output. \
+Do NOT wrap the code in markdown code fences (``` or ```python). \
+Output the raw file content directly.
+
+First, output the fully resolved file content — raw code only, starting from \
+the very first line of the file (e.g. a comment, import, or [build-system]).
+Then, on a NEW line after the LAST line of code, output exactly this marker \
+followed by your confidence assessment:
 ---CONFIDENCE---
 score: <0-100>
 reasoning: <one sentence explaining your confidence level>
@@ -76,10 +81,14 @@ Internal changes should be layered on top.
 logically coherent.
 
 ## Output format:
-First, output the resolved code for this conflict block. No conflict markers, \
-no markdown code fences.
-Then, on a new line after the resolved code, output exactly this marker followed \
-by your confidence assessment:
+IMPORTANT: Do NOT include any reasoning, analysis, or explanation in your output. \
+Do NOT wrap the code in markdown code fences (``` or ```python). \
+Output the raw resolved code directly.
+
+First, output the resolved code for this conflict block — raw code only, \
+no conflict markers, no markdown.
+Then, on a NEW line after the LAST line of code, output exactly this marker \
+followed by your confidence assessment:
 ---CONFIDENCE---
 score: <0-100>
 reasoning: <one sentence explaining your confidence level>
@@ -232,6 +241,21 @@ CONFIDENCE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Pattern to match markdown code fences: ```python ... ``` or ``` ... ```
+CODE_FENCE_PATTERN = re.compile(
+    r"```[\w]*\s*\n(.*?)```",
+    re.DOTALL,
+)
+
+# Lines that look like English prose reasoning (not code)
+_PROSE_INDICATORS = re.compile(
+    r"^(Looking at|However,|The OURS|The THEIRS|The upstream|The internal|"
+    r"The conflict|The correct|The resolution|I'll keep|I should|I need to|"
+    r"I preserved|I merged|I combined|I chose|Let me|Since |So the|For other|"
+    r"Following the|This is |Both sides|The base|The cherry|The goal|"
+    r"\d+\.\s+\*\*|   - )",
+)
+
 
 def _parse_confidence(text: str) -> tuple[str, int, str]:
     """
@@ -246,6 +270,103 @@ def _parse_confidence(text: str) -> tuple[str, int, str]:
         return content, score, reasoning
     # No marker found — return full text with default unknown confidence
     return text, -1, "no confidence score returned"
+
+
+def _strip_code_fences(text: str) -> str:
+    """
+    If the response is wrapped in markdown code fences, extract just the content.
+    Handles ```python ... ``` and ``` ... ```.
+    """
+    matches = list(CODE_FENCE_PATTERN.finditer(text))
+    if not matches:
+        return text
+
+    # If there's exactly one fenced block that covers most of the text,
+    # it's the whole response wrapped in fences — extract it
+    if len(matches) == 1:
+        inner = matches[0].group(1)
+        # Check that the fenced block is the bulk of the content
+        # (not just a small example inside reasoning)
+        outer_text = text[:matches[0].start()] + text[matches[0].end():]
+        if len(inner.strip()) > len(outer_text.strip()):
+            return inner
+
+    # Multiple fence blocks or fence is a small part — could be
+    # reasoning with code examples. Extract and concatenate all fenced blocks.
+    # But only if the non-fenced text looks like prose.
+    non_fenced = text
+    for m in reversed(matches):
+        non_fenced = non_fenced[:m.start()] + non_fenced[m.end():]
+    non_fenced_lines = [l for l in non_fenced.strip().splitlines() if l.strip()]
+    if non_fenced_lines and all(
+        _PROSE_INDICATORS.match(l.strip()) or not l.strip()
+        for l in non_fenced_lines[:5]
+    ):
+        # Non-fenced content is reasoning — return only the fenced code
+        return "\n".join(m.group(1) for m in matches)
+
+    return text
+
+
+def _strip_preamble(text: str) -> str:
+    """
+    Remove any reasoning/analysis text that appears before the actual code.
+    Detects prose lines at the start of the response and strips them.
+    """
+    lines = text.split("\n")
+    first_code_line = 0
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # If line looks like prose reasoning, skip it
+        if _PROSE_INDICATORS.match(stripped):
+            first_code_line = i + 1
+            continue
+        # Markdown-style lines (bullet points, numbered lists, bold)
+        if stripped.startswith(("- ", "* ", "**")):
+            first_code_line = i + 1
+            continue
+        # Blank lines between prose are also preamble
+        if first_code_line > 0 and not stripped:
+            first_code_line = i + 1
+            continue
+        # Found a non-prose line — stop
+        break
+
+    if first_code_line > 0:
+        # Skip any remaining blank lines after the preamble
+        while first_code_line < len(lines) and not lines[first_code_line].strip():
+            first_code_line += 1
+        return "\n".join(lines[first_code_line:])
+
+    return text
+
+
+def _clean_response(text: str) -> tuple[str, int, str]:
+    """
+    Clean Claude's response by:
+    1. Parsing and stripping the ---CONFIDENCE--- marker
+    2. Stripping markdown code fences
+    3. Stripping preamble reasoning text
+
+    Returns (clean_content, confidence_score, reasoning).
+    """
+    # Step 1: Parse confidence (removes everything after ---CONFIDENCE---)
+    content, score, reasoning = _parse_confidence(text)
+
+    # Step 2: Strip code fences
+    content = _strip_code_fences(content)
+
+    # Step 3: Strip preamble reasoning
+    content = _strip_preamble(content)
+
+    # Step 4: Strip trailing whitespace/fences
+    content = content.rstrip()
+    if content.endswith("```"):
+        content = content[:-3].rstrip()
+
+    return content, score, reasoning
 
 
 def _has_conflict_markers(text: str) -> bool:
@@ -290,7 +411,7 @@ def _resolve_chunk(
                     continue
                 return None
             raw = response.content[0].text
-            resolved, confidence, reasoning = _parse_confidence(raw)
+            resolved, confidence, reasoning = _clean_response(raw)
 
             if _has_conflict_markers(resolved):
                 logger.warning(
@@ -355,7 +476,7 @@ def _resolve_full_file(
                     continue
                 return None
             raw = response.content[0].text
-            resolved, confidence, reasoning = _parse_confidence(raw)
+            resolved, confidence, reasoning = _clean_response(raw)
 
             if _has_conflict_markers(resolved):
                 logger.warning(
