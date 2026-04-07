@@ -124,8 +124,10 @@ python agent.py \
    - Fetches merged PRs from the internal repo that previously modified the same file.
    - Sends all context to Claude, which resolves the conflict — applying internal customizations cleanly on top of the latest upstream code.
 6. **Tags resolved commits** — prepends `[Conflict resolved]` to the commit message.
-7. **Result**: a clean linear branch with no merge or rebase commits.
-8. Sends a Teams notification with the result.
+7. **Scores confidence** — each resolved file gets a confidence score (0–100%) indicating how certain Claude is about the resolution.
+8. **Result**: a clean linear branch with no merge or rebase commits.
+9. Prints a **confidence summary** and flags files below 70% for manual review.
+10. Sends a Teams notification with the result (including confidence scores).
 
 ## Branch Naming
 
@@ -160,6 +162,30 @@ Conflict resolved by rebase-agent in: path/to/file1.py, path/to/file2.py
 ```
 
 Use `git log --grep="Conflict resolved"` to find all auto-resolved commits for review.
+
+## Confidence Scores
+
+After resolving conflicts, the agent prints a confidence summary for every resolved file:
+
+```
+=== Conflict Resolution Confidence Summary ===
+File                                               Commit     Score  Reasoning
+--------------------------------------------------------------------------------------------------------------
+python/sglang/srt/layers/rotary_embedding.py       a1b2c3d4   62%    complex logic merge with ambiguous intent
+python/pyproject_xpu.toml                           e5f6g7h8   85%    straightforward dependency version update
+test/registered/unit/test_swa_unittest.py           d0eec661   95%    trivial device-agnostic change
+--------------------------------------------------------------------------------------------------------------
+Average confidence: 81% | Files resolved: 3 | Needs review (< 70%): 1
+```
+
+| Score | Meaning |
+|---|---|
+| 90–100% | Trivial or straightforward conflict (e.g. imports, simple additions) |
+| 70–89% | Moderate complexity, high confidence the intent is preserved |
+| 50–69% | Complex conflict, some ambiguity — review recommended |
+| 0–49% | Significant uncertainty — manual review strongly recommended |
+
+Files scoring below 70% are flagged in both the console output and the Teams notification.
 
 ## Teams Webhook Setup
 

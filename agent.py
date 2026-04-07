@@ -20,11 +20,12 @@ Environment variables:
 import argparse
 import logging
 import sys
+from dataclasses import dataclass
 
 from config import RebaseConfig
-from conflict_resolver import resolve_conflict
+from conflict_resolver import ResolutionResult, resolve_conflict
 from git_ops import GitOperations, InternalCommit
-from notifier import RebaseResult, send_teams_notification
+from notifier import ConfidenceEntry, RebaseResult, send_teams_notification
 from pr_context import fetch_pr_context_for_file
 
 logging.basicConfig(
@@ -34,13 +35,56 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class FileConfidence:
+    path: str
+    commit_sha: str
+    confidence: int  # 0-100, or -1 if unknown
+    reasoning: str
+
+
 def _notify(config: RebaseConfig, result: RebaseResult):
     """Send Teams notification if webhook is configured."""
     if config.teams_webhook_url:
         send_teams_notification(config.teams_webhook_url, result)
 
 
+def _log_confidence_summary(scores: list[FileConfidence]):
+    """Print a confidence score summary table."""
+    logger.info("=== Conflict Resolution Confidence Summary ===")
+    logger.info("%-50s %-10s %-6s %s", "File", "Commit", "Score", "Reasoning")
+    logger.info("-" * 110)
+    for s in sorted(scores, key=lambda x: x.confidence):
+        score_str = f"{s.confidence}%" if s.confidence >= 0 else "N/A"
+        logger.info("%-50s %-10s %-6s %s", s.path, s.commit_sha, score_str, s.reasoning)
+
+    valid = [s.confidence for s in scores if s.confidence >= 0]
+    if valid:
+        avg = sum(valid) / len(valid)
+        low = [s for s in scores if 0 <= s.confidence < 70]
+        logger.info("-" * 110)
+        logger.info(
+            "Average confidence: %.0f%% | Files resolved: %d | Needs review (< 70%%): %d",
+            avg, len(scores), len(low),
+        )
+        if low:
+            logger.warning("Files recommended for manual review:")
+            for s in low:
+                logger.warning("  - %s (commit %s, %d%%): %s", s.path, s.commit_sha, s.confidence, s.reasoning)
+
+
 def _make_result(config: RebaseConfig, **kwargs) -> RebaseResult:
+    # Convert FileConfidence to ConfidenceEntry for the notifier
+    if "confidence_scores" in kwargs and kwargs["confidence_scores"]:
+        kwargs["confidence_scores"] = [
+            ConfidenceEntry(
+                path=fc.path,
+                commit_sha=fc.commit_sha,
+                confidence=fc.confidence,
+                reasoning=fc.reasoning,
+            )
+            for fc in kwargs["confidence_scores"]
+        ]
     return RebaseResult(
         internal_repo=config.internal_repo_url,
         upstream_repo=config.upstream_repo_url,
@@ -55,6 +99,7 @@ def _resolve_cherry_pick_conflicts(
     config: RebaseConfig,
     commit: InternalCommit,
     resolved_files_all: list[str],
+    confidence_scores: list[FileConfidence],
 ) -> list[str] | None:
     """
     Resolve conflicts for a cherry-pick.
@@ -77,16 +122,22 @@ def _resolve_cherry_pick_conflicts(
         if file_log:
             logger.debug("  Recent commits for %s:\n%s", conflict.path, file_log)
 
-        resolved_content = resolve_conflict(config, conflict, pr_contexts)
+        result = resolve_conflict(config, conflict, pr_contexts)
 
-        if resolved_content is None:
+        if result is None:
             logger.error("  Failed to resolve %s", conflict.path)
             return None
 
-        git.apply_resolution(conflict.path, resolved_content)
+        git.apply_resolution(conflict.path, result.content)
         round_resolved.append(conflict.path)
         resolved_files_all.append(conflict.path)
-        logger.info("  Resolved: %s", conflict.path)
+        confidence_scores.append(FileConfidence(
+            path=conflict.path,
+            commit_sha=commit.sha[:8],
+            confidence=result.confidence,
+            reasoning=result.reasoning,
+        ))
+        logger.info("  Resolved: %s (confidence: %d%%)", conflict.path, result.confidence)
 
     return round_resolved
 
@@ -103,6 +154,7 @@ def run_rebase_agent(config: RebaseConfig, push: bool = False) -> bool:
     """
     git = GitOperations(config)
     resolved_files: list[str] = []
+    confidence_scores: list[FileConfidence] = []
     branch_name: str | None = None
 
     try:
@@ -144,7 +196,7 @@ def run_rebase_agent(config: RebaseConfig, push: bool = False) -> bool:
 
             # Conflicts — resolve them
             round_resolved = _resolve_cherry_pick_conflicts(
-                git, config, commit, resolved_files,
+                git, config, commit, resolved_files, confidence_scores,
             )
 
             if round_resolved is None:
@@ -178,6 +230,10 @@ def run_rebase_agent(config: RebaseConfig, push: bool = False) -> bool:
         logger.info("=== All %d commits cherry-picked successfully! ===", len(commits))
         logger.info("Result branch: %s", branch_name)
 
+        # Print confidence summary
+        if confidence_scores:
+            _log_confidence_summary(confidence_scores)
+
         if push:
             git.push_result(branch_name)
 
@@ -185,6 +241,7 @@ def run_rebase_agent(config: RebaseConfig, push: bool = False) -> bool:
             config,
             success=True,
             conflicts_resolved=resolved_files,
+            confidence_scores=confidence_scores,
             push_branch=branch_name,
         ))
         return True

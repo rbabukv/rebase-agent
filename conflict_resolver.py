@@ -2,6 +2,7 @@
 
 import logging
 import re
+from dataclasses import dataclass
 
 import anthropic
 
@@ -10,6 +11,13 @@ from git_ops import ConflictedFile
 from pr_context import PRContext
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ResolutionResult:
+    content: str
+    confidence: int  # 0-100
+    reasoning: str  # Brief explanation of confidence score
 
 SYSTEM_PROMPT_FULL_FILE = """\
 You are a git conflict resolution expert. Your job is to resolve cherry-pick \
@@ -38,8 +46,18 @@ onto the current upstream code.
 logically coherent. No leftover conflict markers.
 
 ## Output format:
-Return ONLY the fully resolved file content. No explanations, no markdown code \
-fences, no commentary. Just the raw file content that should be written to disk.\
+First, output the fully resolved file content.
+Then, on a new line after the file content, output exactly this marker followed \
+by your confidence assessment:
+---CONFIDENCE---
+score: <0-100>
+reasoning: <one sentence explaining your confidence level>
+
+The score should reflect how confident you are that the resolution is correct:
+- 90-100: Trivial or straightforward conflict (e.g. imports, simple additions)
+- 70-89: Moderate complexity, high confidence the intent is preserved
+- 50-69: Complex conflict, some ambiguity in the correct resolution
+- 0-49: Significant uncertainty, manual review strongly recommended\
 """
 
 SYSTEM_PROMPT_CHUNK = """\
@@ -58,9 +76,19 @@ Internal changes should be layered on top.
 logically coherent.
 
 ## Output format:
-Return ONLY the resolved code for this conflict block. No conflict markers, \
-no explanations, no markdown code fences, no commentary. Just the raw resolved \
-code that replaces the entire conflict block (from <<<<<<< to >>>>>>>).\
+First, output the resolved code for this conflict block. No conflict markers, \
+no markdown code fences.
+Then, on a new line after the resolved code, output exactly this marker followed \
+by your confidence assessment:
+---CONFIDENCE---
+score: <0-100>
+reasoning: <one sentence explaining your confidence level>
+
+The score should reflect how confident you are that the resolution is correct:
+- 90-100: Trivial or straightforward conflict (e.g. imports, simple additions)
+- 70-89: Moderate complexity, high confidence the intent is preserved
+- 50-69: Complex conflict, some ambiguity in the correct resolution
+- 0-49: Significant uncertainty, manual review strongly recommended\
 """
 
 # Regex to match a conflict block with surrounding context lines
@@ -199,6 +227,27 @@ def _make_client(config: RebaseConfig) -> anthropic.AnthropicBedrock:
     return anthropic.AnthropicBedrock(**bedrock_kwargs)
 
 
+CONFIDENCE_PATTERN = re.compile(
+    r"---CONFIDENCE---\s*\n\s*score:\s*(\d+)\s*\n\s*reasoning:\s*(.+)",
+    re.IGNORECASE,
+)
+
+
+def _parse_confidence(text: str) -> tuple[str, int, str]:
+    """
+    Parse confidence marker from Claude's response.
+    Returns (content_without_marker, score, reasoning).
+    """
+    m = CONFIDENCE_PATTERN.search(text)
+    if m:
+        score = min(100, max(0, int(m.group(1))))
+        reasoning = m.group(2).strip()
+        content = text[:m.start()].rstrip()
+        return content, score, reasoning
+    # No marker found — return full text with default unknown confidence
+    return text, -1, "no confidence score returned"
+
+
 def _has_conflict_markers(text: str) -> bool:
     return "<<<<<<" in text or ">>>>>>>" in text
 
@@ -210,7 +259,7 @@ def _resolve_chunk(
     filepath: str,
     block_idx: int,
     max_retries: int = 3,
-) -> str | None:
+) -> ResolutionResult | None:
     """Resolve a single conflict chunk with retries."""
     for attempt in range(1, max_retries + 1):
         logger.info(
@@ -240,7 +289,8 @@ def _resolve_chunk(
                 if attempt < max_retries:
                     continue
                 return None
-            resolved = response.content[0].text
+            raw = response.content[0].text
+            resolved, confidence, reasoning = _parse_confidence(raw)
 
             if _has_conflict_markers(resolved):
                 logger.warning(
@@ -250,7 +300,12 @@ def _resolve_chunk(
                 if attempt < max_retries:
                     continue
                 return None
-            return resolved
+
+            logger.info(
+                "  Block %d confidence: %d%% — %s",
+                block_idx, confidence, reasoning,
+            )
+            return ResolutionResult(content=resolved, confidence=confidence, reasoning=reasoning)
 
         except Exception as e:
             logger.error("  Claude API error for block %d: %s", block_idx, e)
@@ -266,7 +321,7 @@ def _resolve_full_file(
     conflict: ConflictedFile,
     pr_contexts: list[PRContext],
     max_retries: int = 3,
-) -> str | None:
+) -> ResolutionResult | None:
     """Try resolving the entire file at once (for small files)."""
     prompt = build_conflict_prompt(conflict, pr_contexts)
 
@@ -299,7 +354,8 @@ def _resolve_full_file(
                 if attempt < max_retries:
                     continue
                 return None
-            resolved = response.content[0].text
+            raw = response.content[0].text
+            resolved, confidence, reasoning = _parse_confidence(raw)
 
             if _has_conflict_markers(resolved):
                 logger.warning(
@@ -309,7 +365,12 @@ def _resolve_full_file(
                 if attempt < max_retries:
                     continue
                 return None
-            return resolved
+
+            logger.info(
+                "  Confidence for %s: %d%% — %s",
+                conflict.path, confidence, reasoning,
+            )
+            return ResolutionResult(content=resolved, confidence=confidence, reasoning=reasoning)
 
         except Exception as e:
             logger.error("Claude API error resolving %s: %s", conflict.path, e)
@@ -328,13 +389,15 @@ def resolve_conflict(
     conflict: ConflictedFile,
     pr_contexts: list[PRContext],
     max_retries: int = 3,
-) -> str | None:
+) -> ResolutionResult | None:
     """
     Resolve a conflicted file using Claude.
 
     For small files: sends the entire file for resolution.
     For large files: extracts individual conflict blocks, resolves each
     separately, and stitches the file back together.
+
+    Returns ResolutionResult with content, confidence score, and reasoning.
     """
     client = _make_client(config)
     content = conflict.content_with_markers
@@ -357,6 +420,9 @@ def resolve_conflict(
 
     # Resolve each block and reconstruct the file
     resolved_content = content
+    block_confidences: list[int] = []
+    block_reasonings: list[str] = []
+
     # Process blocks in reverse order so positions don't shift
     for idx, (start, end, ours_text, theirs_text, full_block) in enumerate(reversed(blocks)):
         block_num = len(blocks) - idx
@@ -366,11 +432,15 @@ def resolve_conflict(
             # Internal commit deletes this section → use ours (upstream)
             logger.info("  Block %d: theirs is empty — keeping ours (upstream)", block_num)
             resolved_content = resolved_content[:start] + ours_text + resolved_content[end:]
+            block_confidences.append(100)
+            block_reasonings.append("trivial: one side empty")
             continue
         if not ours_text.strip():
             # Upstream deleted this section, internal adds → use theirs (internal)
             logger.info("  Block %d: ours is empty — keeping theirs (internal)", block_num)
             resolved_content = resolved_content[:start] + theirs_text + resolved_content[end:]
+            block_confidences.append(100)
+            block_reasonings.append("trivial: one side empty")
             continue
 
         ctx_before, ctx_after = _get_surrounding_context(resolved_content, start, end)
@@ -386,20 +456,36 @@ def resolve_conflict(
             pr_contexts=pr_contexts,
         )
 
-        resolved_block = _resolve_chunk(
+        result = _resolve_chunk(
             client, config, prompt, conflict.path, block_num, max_retries,
         )
 
-        if resolved_block is None:
+        if result is None:
             logger.error("Failed to resolve block %d in %s", block_num, conflict.path)
             return None
 
         # Replace the conflict block with resolved content
-        resolved_content = resolved_content[:start] + resolved_block + resolved_content[end:]
+        resolved_content = resolved_content[:start] + result.content + resolved_content[end:]
+        block_confidences.append(result.confidence)
+        block_reasonings.append(result.reasoning)
 
     # Final sanity check
     if _has_conflict_markers(resolved_content):
         logger.error("Resolved content for %s still has markers after chunk resolution!", conflict.path)
         return None
 
-    return resolved_content
+    # Aggregate confidence: use minimum across all blocks (weakest link)
+    valid_scores = [s for s in block_confidences if s >= 0]
+    avg_confidence = min(valid_scores) if valid_scores else -1
+    summary = f"min of {len(blocks)} blocks; lowest: {min(valid_scores)}%"  if valid_scores else "no scores"
+
+    logger.info(
+        "  Overall confidence for %s: %d%% (%s)",
+        conflict.path, avg_confidence, summary,
+    )
+
+    return ResolutionResult(
+        content=resolved_content,
+        confidence=avg_confidence,
+        reasoning=summary,
+    )

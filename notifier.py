@@ -10,6 +10,14 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class ConfidenceEntry:
+    path: str
+    commit_sha: str
+    confidence: int
+    reasoning: str
+
+
+@dataclass
 class RebaseResult:
     success: bool
     internal_repo: str
@@ -17,6 +25,7 @@ class RebaseResult:
     internal_branch: str
     upstream_branch: str
     conflicts_resolved: list[str]  # List of file paths that had conflicts
+    confidence_scores: list[ConfidenceEntry] | None = None
     failed_file: str | None = None  # File that couldn't be resolved
     error_message: str | None = None
     push_branch: str | None = None  # Branch name the result was pushed to
@@ -40,6 +49,19 @@ def _build_card(result: RebaseResult) -> dict:
     if result.conflicts_resolved:
         file_list = ", ".join(f"`{f}`" for f in result.conflicts_resolved)
         facts.append({"title": "Resolved Files", "value": file_list})
+
+    if result.confidence_scores:
+        valid = [s.confidence for s in result.confidence_scores if s.confidence >= 0]
+        if valid:
+            avg = sum(valid) / len(valid)
+            low_count = sum(1 for s in valid if s < 70)
+            facts.append({"title": "Avg Confidence", "value": f"{avg:.0f}%"})
+            if low_count:
+                low_files = [
+                    f"`{s.path}` ({s.confidence}%)"
+                    for s in result.confidence_scores if 0 <= s.confidence < 70
+                ]
+                facts.append({"title": "Needs Review", "value": ", ".join(low_files)})
 
     if result.failed_file:
         facts.append({"title": "Failed On", "value": f"`{result.failed_file}`"})
