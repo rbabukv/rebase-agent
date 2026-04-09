@@ -21,10 +21,11 @@ import argparse
 import logging
 import sys
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 
 from config import RebaseConfig
 from conflict_resolver import ResolutionResult, resolve_conflict
-from git_ops import GitOperations, InternalCommit
+from git_ops import GitOperations, InternalCommit, UpstreamCommit
 from notifier import ConfidenceEntry, RebaseResult, send_teams_notification
 from pr_context import fetch_pr_context_for_file
 
@@ -41,6 +42,39 @@ class FileConfidence:
     commit_sha: str
     confidence: int  # 0-100, or -1 if unknown
     reasoning: str
+
+
+@dataclass
+class SkippedCommit:
+    commit: InternalCommit
+    upstream_sha: str
+    upstream_subject: str
+    similarity: float  # 0.0 to 1.0
+
+
+@dataclass
+class CommitOutcome:
+    """Tracks the outcome of each commit during the cherry-pick loop."""
+    commit: InternalCommit
+    status: str  # "Clean", "Conflict", "Skipped (upstream match)", "Skipped (empty)"
+    confidence: str = "—"  # e.g., "85%", "90-95% (2 files)", "—"
+    rebase_sha: str = "—"  # SHA on the rebased branch, or "—" if skipped
+
+
+def _find_upstream_match(
+    subject: str, upstream_commits: list[UpstreamCommit], threshold: float = 0.85,
+) -> tuple[UpstreamCommit, float] | None:
+    """Find the best matching upstream commit by subject similarity (>threshold)."""
+    best_match = None
+    best_ratio = 0.0
+    for uc in upstream_commits:
+        ratio = SequenceMatcher(None, subject.lower(), uc.subject.lower()).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_match = uc
+    if best_match and best_ratio > threshold:
+        return (best_match, best_ratio)
+    return None
 
 
 def _notify(config: RebaseConfig, result: RebaseResult):
@@ -73,6 +107,48 @@ def _log_confidence_summary(scores: list[FileConfidence]):
                 logger.warning("  - %s (commit %s, %d%%): %s", s.path, s.commit_sha, s.confidence, s.reasoning)
 
 
+def _log_commit_breakdown(outcomes: list[CommitOutcome]):
+    """Print a per-commit breakdown table showing status of all commits."""
+    logger.info("=== Per-Commit Breakdown ===")
+    logger.info(
+        "%-4s %-12s %-12s %-45s %-26s %s",
+        "#", "Internal SHA", "Rebase SHA", "Description", "Status", "Confidence",
+    )
+    logger.info("-" * 150)
+
+    clean_count = 0
+    conflict_count = 0
+    skipped_match_count = 0
+    skipped_empty_count = 0
+
+    for i, o in enumerate(outcomes, 1):
+        desc = o.commit.subject[:45]
+        logger.info(
+            "%-4d %-12s %-12s %-45s %-26s %s",
+            i, o.commit.sha[:8], o.rebase_sha, desc, o.status, o.confidence,
+        )
+        if o.status == "Clean":
+            clean_count += 1
+        elif o.status == "Conflict":
+            conflict_count += 1
+        elif o.status.startswith("Skipped (upstream"):
+            skipped_match_count += 1
+        elif o.status.startswith("Skipped (empty"):
+            skipped_empty_count += 1
+
+    logger.info("-" * 150)
+    parts = [f"Total: {len(outcomes)}"]
+    if clean_count:
+        parts.append(f"Clean: {clean_count}")
+    if conflict_count:
+        parts.append(f"Conflicts resolved: {conflict_count}")
+    if skipped_match_count:
+        parts.append(f"Skipped (upstream match): {skipped_match_count}")
+    if skipped_empty_count:
+        parts.append(f"Skipped (empty): {skipped_empty_count}")
+    logger.info(" | ".join(parts))
+
+
 def _make_result(config: RebaseConfig, **kwargs) -> RebaseResult:
     # Convert FileConfidence to ConfidenceEntry for the notifier
     if "confidence_scores" in kwargs and kwargs["confidence_scores"]:
@@ -84,6 +160,19 @@ def _make_result(config: RebaseConfig, **kwargs) -> RebaseResult:
                 reasoning=fc.reasoning,
             )
             for fc in kwargs["confidence_scores"]
+        ]
+    # Convert SkippedCommit to SkippedEntry for the notifier
+    if "skipped_commits" in kwargs and kwargs["skipped_commits"]:
+        from notifier import SkippedEntry
+        kwargs["skipped_commits"] = [
+            SkippedEntry(
+                internal_sha=sc.commit.sha[:8],
+                internal_subject=sc.commit.subject,
+                upstream_sha=sc.upstream_sha[:8],
+                upstream_subject=sc.upstream_subject,
+                similarity=sc.similarity,
+            )
+            for sc in kwargs["skipped_commits"]
         ]
     return RebaseResult(
         internal_repo=config.internal_repo_url,
@@ -155,6 +244,8 @@ def run_rebase_agent(config: RebaseConfig, push: bool = False) -> bool:
     git = GitOperations(config)
     resolved_files: list[str] = []
     confidence_scores: list[FileConfidence] = []
+    skipped_commits: list[SkippedCommit] = []
+    commit_outcomes: list[CommitOutcome] = []
     branch_name: str | None = None
 
     try:
@@ -177,6 +268,10 @@ def run_rebase_agent(config: RebaseConfig, push: bool = False) -> bool:
         for i, c in enumerate(commits, 1):
             logger.info("  %d. %s %s", i, c.sha[:8], c.subject)
 
+        # Step 2b: Fetch upstream commit subjects for similarity matching
+        logger.info("=== Fetching upstream commit subjects (last 1 year) ===")
+        upstream_commits = git.get_upstream_commit_subjects(since_days=365)
+
         # Step 3: Create branch from upstream HEAD
         logger.info("=== Creating branch from upstream ===")
         branch_name = git.create_branch_from_upstream()
@@ -186,12 +281,42 @@ def run_rebase_agent(config: RebaseConfig, push: bool = False) -> bool:
         for i, commit in enumerate(commits, 1):
             logger.info("--- Commit %d/%d: %s %s ---", i, len(commits), commit.sha[:8], commit.subject)
 
+            # Check if commit subject matches an upstream commit (>85% similarity)
+            if upstream_commits:
+                match = _find_upstream_match(commit.subject, upstream_commits)
+                if match:
+                    upstream_commit, similarity = match
+                    logger.info(
+                        "  Skipping — upstream match (%.0f%%): %s %s",
+                        similarity * 100, upstream_commit.sha[:8], upstream_commit.subject,
+                    )
+                    skipped_commits.append(SkippedCommit(
+                        commit=commit,
+                        upstream_sha=upstream_commit.sha,
+                        upstream_subject=upstream_commit.subject,
+                        similarity=similarity,
+                    ))
+                    commit_outcomes.append(CommitOutcome(
+                        commit=commit,
+                        status=f"Skipped (upstream match → {upstream_commit.sha[:8]})",
+                        confidence=f"{similarity:.0%} similar",
+                    ))
+                    continue
+
             pick_result = git.cherry_pick(commit)
             if pick_result is True:
+                rebase_sha = git.get_head_sha()
                 logger.info("  Applied cleanly.")
+                commit_outcomes.append(CommitOutcome(
+                    commit=commit, status="Clean",
+                    rebase_sha=rebase_sha,
+                ))
                 continue
             if pick_result is None:
                 # Empty cherry-pick — commit already in upstream, skip
+                commit_outcomes.append(CommitOutcome(
+                    commit=commit, status="Skipped (empty cherry-pick)",
+                ))
                 continue
 
             # Conflicts — resolve them
@@ -224,11 +349,34 @@ def run_rebase_agent(config: RebaseConfig, push: bool = False) -> bool:
                 ))
                 return False
 
+            # Build confidence detail for this commit
+            rebase_sha = git.get_head_sha()
+            commit_conf = [s for s in confidence_scores if s.commit_sha == commit.sha[:8]]
+            if len(commit_conf) == 1:
+                conf_detail = f"{commit_conf[0].confidence}%"
+            elif len(commit_conf) > 1:
+                scores_vals = [s.confidence for s in commit_conf if s.confidence >= 0]
+                if scores_vals:
+                    lo, hi = min(scores_vals), max(scores_vals)
+                    conf_detail = f"{lo}-{hi}% ({len(commit_conf)} files)"
+                else:
+                    conf_detail = f"N/A ({len(commit_conf)} files)"
+            else:
+                conf_detail = "Resolved"
+
+            commit_outcomes.append(CommitOutcome(
+                commit=commit, status="Conflict",
+                confidence=conf_detail, rebase_sha=rebase_sha,
+            ))
             logger.info("  Committed with [Conflict resolved] tag.")
 
         # Step 5: Done!
         logger.info("=== All %d commits cherry-picked successfully! ===", len(commits))
         logger.info("Result branch: %s", branch_name)
+
+        # Print per-commit breakdown table (includes skipped commits)
+        if commit_outcomes:
+            _log_commit_breakdown(commit_outcomes)
 
         # Print confidence summary
         if confidence_scores:
@@ -242,6 +390,7 @@ def run_rebase_agent(config: RebaseConfig, push: bool = False) -> bool:
             success=True,
             conflicts_resolved=resolved_files,
             confidence_scores=confidence_scores,
+            skipped_commits=skipped_commits,
             push_branch=branch_name,
         ))
         return True

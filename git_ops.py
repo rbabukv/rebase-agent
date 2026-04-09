@@ -28,11 +28,17 @@ class InternalCommit:
     message: str  # Full commit message
 
 
+@dataclass
+class UpstreamCommit:
+    sha: str
+    subject: str  # First line of commit message
+
+
 class GitOperations:
     def __init__(self, config: RebaseConfig):
         self.config = config
         if config.work_dir:
-            self.work_dir = Path(config.work_dir)
+            self.work_dir = Path(config.work_dir).resolve()
             self.work_dir.mkdir(parents=True, exist_ok=True)
             self._tmp = None
         else:
@@ -261,6 +267,10 @@ class GitOperations:
             return "unknown"
         return result.stdout.strip()
 
+    def get_head_sha(self) -> str:
+        """Get the short SHA of the current HEAD commit."""
+        return self._get_short_sha("HEAD")
+
     def push_result(self, branch_name: str, force: bool = False):
         """Push the branch to internal remote."""
         args = ["push", "origin", branch_name]
@@ -278,6 +288,29 @@ class GitOperations:
             f"origin/{self.config.internal_branch}", "--", filepath,
         )
         return result.stdout.strip()
+
+    def get_upstream_commit_subjects(self, since_days: int = 365) -> list[UpstreamCommit]:
+        """Get upstream commit subjects from the last `since_days` days for similarity matching."""
+        upstream_ref = self._upstream_ref()
+        result = self._run(
+            "log", f"--since={since_days} days ago", "--no-merges",
+            "--format=%H %s", upstream_ref,
+        )
+        if result.returncode != 0:
+            logger.warning("Failed to get upstream commits: %s", result.stderr)
+            return []
+
+        commits = []
+        for line in result.stdout.strip().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(" ", 1)
+            if len(parts) == 2:
+                commits.append(UpstreamCommit(sha=parts[0], subject=parts[1]))
+
+        logger.info("Fetched %d upstream commit subjects (last %d days)", len(commits), since_days)
+        return commits
 
     def get_branch_name(self) -> str:
         """Get the current branch name."""

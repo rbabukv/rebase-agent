@@ -18,6 +18,15 @@ class ConfidenceEntry:
 
 
 @dataclass
+class SkippedEntry:
+    internal_sha: str
+    internal_subject: str
+    upstream_sha: str
+    upstream_subject: str
+    similarity: float  # 0.0 to 1.0
+
+
+@dataclass
 class RebaseResult:
     success: bool
     internal_repo: str
@@ -26,6 +35,7 @@ class RebaseResult:
     upstream_branch: str
     conflicts_resolved: list[str]  # List of file paths that had conflicts
     confidence_scores: list[ConfidenceEntry] | None = None
+    skipped_commits: list[SkippedEntry] | None = None
     failed_file: str | None = None  # File that couldn't be resolved
     error_message: str | None = None
     push_branch: str | None = None  # Branch name the result was pushed to
@@ -62,6 +72,9 @@ def _build_card(result: RebaseResult) -> dict:
                     for s in result.confidence_scores if 0 <= s.confidence < 70
                 ]
                 facts.append({"title": "Needs Review", "value": ", ".join(low_files)})
+
+    if result.skipped_commits:
+        facts.append({"title": "Skipped (Upstream Match)", "value": str(len(result.skipped_commits))})
 
     if result.failed_file:
         facts.append({"title": "Failed On", "value": f"`{result.failed_file}`"})
