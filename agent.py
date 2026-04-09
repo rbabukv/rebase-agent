@@ -21,7 +21,9 @@ import argparse
 import logging
 import sys
 from dataclasses import dataclass
+from datetime import date
 from difflib import SequenceMatcher
+from pathlib import Path
 
 from config import RebaseConfig
 from conflict_resolver import ResolutionResult, resolve_conflict
@@ -147,6 +149,98 @@ def _log_commit_breakdown(outcomes: list[CommitOutcome]):
     if skipped_empty_count:
         parts.append(f"Skipped (empty): {skipped_empty_count}")
     logger.info(" | ".join(parts))
+
+
+def _generate_confidence_md(
+    config: RebaseConfig,
+    branch_name: str,
+    outcomes: list[CommitOutcome],
+    confidence_scores: list[FileConfidence],
+    skipped_commits: list[SkippedCommit],
+) -> str:
+    """Generate a markdown confidence report and return its content."""
+    lines: list[str] = []
+    upstream_label = config.upstream_base or config.upstream_branch
+    lines.append(f"# Rebase Confidence Scoring — {upstream_label}")
+    lines.append("")
+    lines.append(f"**Branch:** `{branch_name}`  ")
+    lines.append(f"**Date:** {date.today().isoformat()}  ")
+    lines.append(f"**Upstream base:** `{upstream_label}`  ")
+    if config.internal_start:
+        lines.append(f"**Internal start:** `{config.internal_start[:8]}`")
+    lines.append("")
+
+    # --- Per-Commit Breakdown ---
+    lines.append("## Per-Commit Breakdown")
+    lines.append("")
+    lines.append("| # | Internal SHA | Rebase SHA | Description | Status | Confidence |")
+    lines.append("|---|-------------|------------|-------------|--------|------------|")
+    for i, o in enumerate(outcomes, 1):
+        sha = o.commit.sha[:8]
+        rebase = f"`{o.rebase_sha}`" if o.rebase_sha != "—" else "—"
+        desc = o.commit.subject
+        status = o.status
+        conf = o.confidence
+        # Bold low-confidence scores in the confidence column
+        lines.append(f"| {i} | `{sha}` | {rebase} | {desc} | {status} | {conf} |")
+    lines.append("")
+
+    # --- Summary ---
+    clean_count = sum(1 for o in outcomes if o.status == "Clean")
+    conflict_count = sum(1 for o in outcomes if o.status == "Conflict")
+    skipped_empty_count = sum(1 for o in outcomes if o.status.startswith("Skipped (empty"))
+    skipped_match_count = len(skipped_commits)
+
+    valid_scores = [s.confidence for s in confidence_scores if s.confidence >= 0]
+    avg_conf = sum(valid_scores) / len(valid_scores) if valid_scores else 0
+
+    lines.append("## Summary")
+    lines.append("")
+    lines.append("| Metric | Value |")
+    lines.append("|--------|-------|")
+    lines.append(f"| Total commits | {len(outcomes)} |")
+    lines.append(f"| Clean cherry-picks | {clean_count} |")
+    if skipped_empty_count:
+        lines.append(f"| Skipped (empty cherry-pick) | {skipped_empty_count} |")
+    if skipped_match_count:
+        lines.append(f"| Skipped (upstream match) | {skipped_match_count} |")
+    lines.append(f"| Conflicts resolved | {conflict_count} |")
+    lines.append(f"| Total files resolved | {len(confidence_scores)} |")
+    lines.append(f"| Average confidence | **{avg_conf:.0f}%** |")
+    lines.append("")
+
+    # --- Skipped Commits — Upstream Match Details ---
+    if skipped_commits:
+        lines.append("## Skipped Commits — Upstream Match Details")
+        lines.append("")
+        lines.append("| Internal SHA | Internal Subject | Upstream SHA | Upstream Subject | Similarity |")
+        lines.append("|-------------|-----------------|-------------|-----------------|------------|")
+        for sc in skipped_commits:
+            lines.append(
+                f"| `{sc.commit.sha[:8]}` | {sc.commit.subject} "
+                f"| `{sc.upstream_sha[:8]}` | {sc.upstream_subject} | {sc.similarity:.0%} |"
+            )
+        lines.append("")
+
+    # --- Files Needing Manual Review ---
+    low_conf = [s for s in confidence_scores if 0 <= s.confidence < 70]
+    na_conf = [s for s in confidence_scores if s.confidence < 0]
+    review_files = low_conf + na_conf
+    if review_files:
+        lines.append("## Files Needing Manual Review (< 70%)")
+        lines.append("")
+        lines.append("| File | Confidence | Internal SHA | Rebase SHA |")
+        lines.append("|------|------------|-------------|------------|")
+        for s in sorted(review_files, key=lambda x: x.confidence):
+            score_str = f"**{s.confidence}%**" if s.confidence >= 0 else "**N/A**"
+            # Find the matching outcome to get commit subject and rebase SHA
+            matching = [o for o in outcomes if o.commit.sha[:8] == s.commit_sha]
+            subject = matching[0].commit.subject if matching else ""
+            rebase = f"`{matching[0].rebase_sha}`" if matching and matching[0].rebase_sha != "—" else "—"
+            lines.append(f"| `{s.path}` | {score_str} | `{s.commit_sha}` — {subject} | {rebase} |")
+        lines.append("")
+
+    return "\n".join(lines)
 
 
 def _make_result(config: RebaseConfig, **kwargs) -> RebaseResult:
@@ -381,6 +475,18 @@ def run_rebase_agent(config: RebaseConfig, push: bool = False) -> bool:
         # Print confidence summary
         if confidence_scores:
             _log_confidence_summary(confidence_scores)
+
+        # Generate and write confidence markdown report
+        md_content = _generate_confidence_md(
+            config, branch_name, commit_outcomes,
+            confidence_scores, skipped_commits,
+        )
+        upstream_label = config.upstream_base or config.upstream_branch
+        md_filename = f"rebase_confidence_{upstream_label}.md"
+        md_path = Path(md_filename)
+        md_path.write_text(md_content)
+        logger.info("Confidence report written to %s", md_filename)
+        print(f"\n{md_content}")
 
         if push:
             git.push_result(branch_name)
