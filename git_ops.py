@@ -268,8 +268,11 @@ class GitOperations:
         return result.stdout.strip()
 
     def get_head_sha(self) -> str:
-        """Get the short SHA of the current HEAD commit."""
-        return self._get_short_sha("HEAD")
+        """Get the full SHA of the current HEAD commit."""
+        result = self._run("rev-parse", "HEAD")
+        if result.returncode != 0:
+            return "unknown"
+        return result.stdout.strip()
 
     def push_result(self, branch_name: str, force: bool = False):
         """Push the branch to internal remote."""

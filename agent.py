@@ -113,10 +113,10 @@ def _log_commit_breakdown(outcomes: list[CommitOutcome]):
     """Print a per-commit breakdown table showing status of all commits."""
     logger.info("=== Per-Commit Breakdown ===")
     logger.info(
-        "%-4s %-12s %-12s %-45s %-26s %s",
+        "%-4s %-12s %-12s %-45s %-38s %s",
         "#", "Internal SHA", "Rebase SHA", "Description", "Status", "Confidence",
     )
-    logger.info("-" * 150)
+    logger.info("-" * 160)
 
     clean_count = 0
     conflict_count = 0
@@ -125,9 +125,10 @@ def _log_commit_breakdown(outcomes: list[CommitOutcome]):
 
     for i, o in enumerate(outcomes, 1):
         desc = o.commit.subject[:45]
+        reb_display = o.rebase_sha[:8] if o.rebase_sha != "—" else "—"
         logger.info(
-            "%-4d %-12s %-12s %-45s %-26s %s",
-            i, o.commit.sha[:8], o.rebase_sha, desc, o.status, o.confidence,
+            "%-4d %-12s %-12s %-45s %-38s %s",
+            i, o.commit.sha[:8], reb_display, desc, o.status, o.confidence,
         )
         if o.status == "Clean":
             clean_count += 1
@@ -151,6 +152,24 @@ def _log_commit_breakdown(outcomes: list[CommitOutcome]):
     logger.info(" | ".join(parts))
 
 
+def _repo_web_url(repo_url: str) -> str:
+    """Convert a git repo URL to a GitHub web base URL (no trailing slash)."""
+    url = repo_url.rstrip("/")
+    if url.endswith(".git"):
+        url = url[:-4]
+    # Convert SSH URLs: git@github.com:owner/repo -> https://github.com/owner/repo
+    if url.startswith("git@"):
+        url = url.replace(":", "/", 1).replace("git@", "https://", 1)
+    return url
+
+
+def _commit_link(repo_url: str, sha: str, short: str | None = None) -> str:
+    """Return a markdown link to a commit: [`short_sha`](url/commit/full_sha)."""
+    display = short or sha[:8]
+    base = _repo_web_url(repo_url)
+    return f"[`{display}`]({base}/commit/{sha})"
+
+
 def _generate_confidence_md(
     config: RebaseConfig,
     branch_name: str,
@@ -159,6 +178,9 @@ def _generate_confidence_md(
     skipped_commits: list[SkippedCommit],
 ) -> str:
     """Generate a markdown confidence report and return its content."""
+    internal_url = config.internal_repo_url
+    upstream_url = config.upstream_repo_url
+
     lines: list[str] = []
     upstream_label = config.upstream_base or config.upstream_branch
     lines.append(f"# Rebase Confidence Scoring — {upstream_label}")
@@ -176,13 +198,12 @@ def _generate_confidence_md(
     lines.append("| # | Internal SHA | Rebase SHA | Description | Status | Confidence |")
     lines.append("|---|-------------|------------|-------------|--------|------------|")
     for i, o in enumerate(outcomes, 1):
-        sha = o.commit.sha[:8]
-        rebase = f"`{o.rebase_sha}`" if o.rebase_sha != "—" else "—"
+        int_link = _commit_link(internal_url, o.commit.sha)
+        rebase = _commit_link(internal_url, o.rebase_sha) if o.rebase_sha != "—" else "—"
         desc = o.commit.subject
         status = o.status
         conf = o.confidence
-        # Bold low-confidence scores in the confidence column
-        lines.append(f"| {i} | `{sha}` | {rebase} | {desc} | {status} | {conf} |")
+        lines.append(f"| {i} | {int_link} | {rebase} | {desc} | {status} | {conf} |")
     lines.append("")
 
     # --- Summary ---
@@ -216,9 +237,11 @@ def _generate_confidence_md(
         lines.append("| Internal SHA | Internal Subject | Upstream SHA | Upstream Subject | Similarity |")
         lines.append("|-------------|-----------------|-------------|-----------------|------------|")
         for sc in skipped_commits:
+            int_link = _commit_link(internal_url, sc.commit.sha)
+            up_link = _commit_link(upstream_url, sc.upstream_sha)
             lines.append(
-                f"| `{sc.commit.sha[:8]}` | {sc.commit.subject} "
-                f"| `{sc.upstream_sha[:8]}` | {sc.upstream_subject} | {sc.similarity:.0%} |"
+                f"| {int_link} | {sc.commit.subject} "
+                f"| {up_link} | {sc.upstream_subject} | {sc.similarity:.0%} |"
             )
         lines.append("")
 
@@ -236,8 +259,9 @@ def _generate_confidence_md(
             # Find the matching outcome to get commit subject and rebase SHA
             matching = [o for o in outcomes if o.commit.sha[:8] == s.commit_sha]
             subject = matching[0].commit.subject if matching else ""
-            rebase = f"`{matching[0].rebase_sha}`" if matching and matching[0].rebase_sha != "—" else "—"
-            lines.append(f"| `{s.path}` | {score_str} | `{s.commit_sha}` — {subject} | {rebase} |")
+            int_link = _commit_link(internal_url, matching[0].commit.sha) if matching else f"`{s.commit_sha}`"
+            rebase = _commit_link(internal_url, matching[0].rebase_sha) if matching and matching[0].rebase_sha != "—" else "—"
+            lines.append(f"| `{s.path}` | {score_str} | {int_link} — {subject} | {rebase} |")
         lines.append("")
 
     return "\n".join(lines)
