@@ -1,93 +1,108 @@
-Subject: Rebase Agent Results — master_next onto upstream v0.5.10
+# Rebase Summary — v0.5.10
 
-Hi,
+**Branch:** `rebase_20260410181915_1519acf3_4a4a8282`  
+**Date:** 2026-04-10  
+**Upstream base:** `v0.5.10`  
+**Internal start:** `d0eec66`
 
-Here is the rebase summary for cherry-picking master_next (from d0eec66) onto upstream tag v0.5.10.
+## Command
 
-Result branch: rebase_20260407084630_1519acf3_0dfd45c7
-Total commits: 61 (38 clean, 23 with conflicts resolved)
-Average confidence: 87%
-Files resolved: 36
-Needs manual review (< 70%): 2
+```bash
+python agent.py --internal https://github.com/intel-innersource/frameworks.ai.pytorch.sglang --upstream https://github.com/sgl-project/sglang --internal-branch master_next --upstream-base v0.5.10 --internal-start d0eec66 --work-dir ./workspace
+```
 
-## Per-Commit Confidence Breakdown
+## Per-Commit Breakdown
 
-| # | Commit | Description | Confidence |
-|---|--------|-------------|------------|
-| 1 | d0eec662 | Add XPU Support to apply_vocab_mask (#1) | 85% |
-| 2 | 6701f64c | XPU profiler (#2) | Clean |
-| 3 | b9f4fb7f | Fix KeyError by syncing global completion template (#5) | 82% |
-| 4 | 9ab40059 | Tests/fix attributeerror (#6) | Clean |
-| 5 | c1c13f0e | Update cutlass_w4a8_moe.py (#10) | Clean |
-| 6 | e0326f9b | Add XPU device support to Triton attention tests (#11) | Clean |
-| 7 | f593abfa | XPU Graph Runner (#3) | Clean |
-| 8 | 0051723b | Add intel_xpu backend for GptOssForCausalLM (#24) | 92% |
-| 9 | d1f11413 | Create test_sync_branches.yml (#34) | Clean |
-| 10 | a32cf48e | Fix hard coded device type in UTs (#28) | 72% |
-| 11 | 5d2b9c90 | Add XPU profiler activity in benchmark (#31) | 72% |
-| 12 | 584675bb | Update pyproject_xpu.toml (#33) | Clean |
-| 13 | 55f32217 | Backend modified for xpu (#39) | Clean |
-| 14 | a72140a1 | Update page_table for local attn (#44) | Clean |
-| 15 | 3c27d741 | Fix Structured Output Outlines Backend (#41) | Clean |
-| 16 | dd8a3c5a | Revert page_table update | Clean |
-| 17 | da5a5126 | Support determinism on XPU (#45) | Clean |
-| 18 | 2da39b3f | Fix XPU compat in CUDA graph runner (#35) | 95% (2 files) |
-| 19 | dd1bb668 | Fix bf16 precision tolerance (#55) | 97% |
-| 20 | a14f9511 | Fix unittests by installing reqs from toml | 90-95% (4 files) |
-| 21 | dff1c7b2 | Enable Sglang diffusion with flux.1-dev (#53) | 52-92% (5 files, lowest 52%) |
-| 22 | 0c02739d | Update forward_moe_native (#36) | Clean |
-| 23 | 1b76e53b | Making UTs compatible for XPU targets | 90% |
-| 24 | e06961a2 | Squashed commit | Clean |
-| 25 | f6e3541c | apply_router_weight_on_input (#58) | Clean |
-| 26 | 564c263b | Revert apply_router_weight_on_input | Clean |
-| 27 | 38d45333 | Enable DeepSeek R1 inference on XPU | 95% (2 files) |
-| 28 | 9f466ccb | Update tuning_fused_moe_triton.py | Clean |
-| 29 | 8f861acb | integrate rms_norm | 82% |
-| 30 | 3732daa0 | add fid accuracy benchmark | Clean |
-| 31 | ad1b5d73 | Enable topk logits dump (#65) | 72% |
-| 32 | 6d7d63d2 | Enable benchmark with image inputs for Multimodal | 88% |
-| 33 | 0816fa87 | Make UTs compatible for XPU (#67) | Clean |
-| 34 | e7d99d97 | Update fused_moe.py revert temp changes | Clean |
-| 35 | 52152319 | Fix module not found error (#73) | Clean |
-| 36 | a03084a1 | Fix module not found error (#74) | 97% |
-| 37 | cc8342c7 | Fix multiple prompts generations | 62-100% (2 files, lowest 62%) |
-| 38 | 7ea2b65f | Device-agnostic helpers for Mamba tests (#77) | 95% |
-| 39 | eb59db43 | Correct tolerance for bf16 test (#85) | Clean |
-| 40 | 8ea48734 | fp32 workaround for RotaryEmbedding | N/A (score not returned) |
-| 41 | d098fa21 | Support --correctness-test for bench_one_batch | 72% |
-| 42 | dcee9fce | Skip check count of chunked reqs | 72% |
-| 43 | 49651e30 | router scaling in moe_sum_reduce & fix EP | Clean |
-| 44 | 76d9e33e | add xpu attn backend | Clean |
-| 45 | 4d0ed336 | fix interface | Clean |
-| 46 | ccb59ae5 | fix xpu attn backend interface | 90% |
-| 47 | 7ee5b21a | update xpu attention name | 97% |
-| 48-57 | Various | XPU test support commits | Clean (all 10) |
-| 58 | 72f07e60 | Upgrade pytorch xpu to 2.11 (#101) | 92-97% (3 files) |
-| 59 | be71e832 | Port Sarvam model to XPU (#96) | 100% |
-| 60 | 7c056bc1 | Add xpu support with get_device (#105) | Clean |
-| 61 | 0dfd45c7 | Add XPU support to test_kda_kernels (#109) | Clean |
+| # | Internal SHA | Rebase SHA | Description | Status | Confidence |
+|---|-------------|------------|-------------|--------|------------|
+| 1 | [`d0eec662`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/d0eec662) | [`a8b40efc`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/a8b40efc11254dfe895e7103a2faea2efd522229) | [Intel XPU] Add XPU Support to apply_vocab_mask #10726 (#1) | Conflict | `xgrammar_backend.py`: 82% |
+| 2 | [`6701f64c`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/6701f64c) | — | XPU profiler (#2) | Skipped (empty cherry-pick) | — |
+| 3 | [`b9f4fb7f`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/b9f4fb7f) | [`f6236c95`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/f6236c95a3e91ce659c75aa567b11a4759b430e0) | [Bugfix]Fix KeyError by syncing global completion template name. (#5) | Conflict | `template_manager.py`: 90% |
+| 4 | [`9ab40059`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/9ab40059) | [`8a03fc06`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/8a03fc06be0aea48175bb0414648506fa0eb8654) | Tests/fix attributeerror error. (#6) | Clean | — |
+| 5 | [`c1c13f0e`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/c1c13f0e) | [`ba8a0852`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/ba8a08528338ae71c1369503c7c5adbfaff42fe7) | Update cutlass_w4a8_moe.py (#10) | Clean | — |
+| 6 | [`e0326f9b`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/e0326f9b) | [`ebf1e75d`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/ebf1e75d0a4cd82e63be96dc4756b274b84094f4) | [Intel XPU]Add XPU device support to Triton attention kernel tests. #10739 (#11) | Clean | — |
+| 7 | [`f593abfa`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/f593abfa) | [`d1887a2a`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/d1887a2a6021c8743076b98e7cee13168495b75f) | XPU Graph Runner (#3) | Clean | — |
+| 8 | [`0051723b`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/0051723b) | [`602a7b74`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/602a7b7488044907caefc8c6707572ce013274b2) | Add intel_xpu as backend for GptOssForCausalLM, enabled for bf16 dtype (#24) | Conflict | `server_args.py`: 92% |
+| 9 | [`d1f11413`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/d1f11413) | [`31ecde00`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/31ecde00fecb009a115533ebb2276a69098643ad) | [SGLANGT-180] Create test_sync_branches.yml workflow to sync master_next and v0.1.0_next (#34) | Clean | — |
+| 10 | [`a32cf48e`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/a32cf48e) | [`487b08ef`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/487b08ef989bb184e29d4db896e64c4c0e6c97c1) | [BMG][UT][Basic Server][Basic Infra] Fix hard coded device type in UTs (#28) | Conflict | `test_swa_unittest.py`: 95% |
+| 11 | [`5d2b9c90`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/5d2b9c90) | [`597924bb`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/597924bb3e37b6a94acf289043bba8d0684a2afe) | Add XPU profiler activity support in benchmark code (#31) | Conflict (upstream match c1df359b 96%) | `bench_one_batch.py`: 92% |
+| 12 | [`584675bb`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/584675bb) | [`ad341fab`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/ad341fab71b3a1e26e42145c8a2abe992e32bad0) | Update pyproject_xpu.toml to use innsersource sgl-kernel-xpu repo (#33) | Clean | — |
+| 13 | [`55f32217`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/55f32217) | [`07c390da`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/07c390da958d765b41d6cd4018aae2464556de17) | [BMG][UT] backend modified to accomodate xpu (#39) | Clean | — |
+| 14 | [`a72140a1`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/a72140a1) | [`9abd1853`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/9abd1853ba29777bf332d650e7088ccf9c071793) | Update page_table for local attn (#44) | Clean | — |
+| 15 | [`3c27d741`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/3c27d741) | [`0b0b809d`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/0b0b809dec4dc913487b130df3844c6419cd68d5) | [SGLANGT-196] Fix Structured Output Outlines Backend (#41) | Clean | — |
+| 16 | [`dd8a3c5a`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/dd8a3c5a) | [`af49a973`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/af49a97360eac374cc1a65713505e1302d819784) | Revert "Update page_table for local attn (#44)" | Clean | — |
+| 17 | [`da5a5126`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/da5a5126) | [`993a942a`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/993a942ac3663f101dfd8b98548c5ddb8f4c84c5) | Support determinism on XPU device (#45) | Clean | — |
+| 18 | [`2da39b3f`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/2da39b3f) | [`eb937a80`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/eb937a80180d5b4eb982b31fe5c4a92aaa237901) | Fix XPU compatibility issues in CUDA graph runner and model layers (#35) | Conflict | `test_vlm_input_format.py`: 90%<br>`test_fp8_kernel.py`: 95% |
+| 19 | [`dd1bb668`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/dd1bb668) | [`36ebda54`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/36ebda54456700010e08f1402235d358c3ee49b5) | Fix assertion tolerance for bfloat16 precision in extend attention test (#55) | Conflict | `test_triton_attention_kernels.py`: 82% |
+| 20 | [`a14f9511`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/a14f9511) | [`832e7093`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/832e7093bd43bc402ea38fd3f7996235f20bd480) | fix unittests by installing requirements from toml | Conflict | `pyproject_xpu.toml`: 82%<br>`pyproject.toml`: 88%<br>`pyproject_cpu.toml`: 90% |
+| 21 | [`dff1c7b2`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/dff1c7b2) | [`3724a109`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/3724a109b4fdf44314ce2dacfadde6748f9fce22) | Enable Sglang diffusion with flux.1-dev  (#53) | Conflict | `flux.py`: 52%<br>`pyproject_xpu.toml`: 85%<br>`layernorm.py`: 88%<br>`fsdp_load.py`: 88%<br>`diffusion_generator.py`: 95% |
+| 22 | [`0c02739d`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/0c02739d) | [`737cecf6`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/737cecf64de24f11b709d23f30acc8a8c9f41f0b) | Update forward_moe_native to support GPT-OSS MoE: (#36) | Clean | — |
+| 23 | [`1b76e53b`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/1b76e53b) | [`45e22338`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/45e223380143d6c11be426fceb2522d1f785f9a0) | [SGLANG][UT] Making UTs compatible to run on XPU targets | Conflict | `marlin_utils.py`: 97% |
+| 24 | [`e06961a2`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/e06961a2) | [`ae8ef79a`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/ae8ef79aceba2e63577bb5b60a3576fb1bdd7a1a) | Squashed commit of the following: | Clean | — |
+| 25 | [`f6e3541c`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/f6e3541c) | [`a8ea7026`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/a8ea7026a6a8e94e94762685a5d513fe816826db) | apply_router_weight_on_input=_is_cuda instead of making it False (#58) | Clean | — |
+| 26 | [`564c263b`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/564c263b) | [`7029a0a2`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/7029a0a2f48a5c28278bef257afc600d5a4e21a0) | Revert "apply_router_weight_on_input=_is_cuda instead of making it False (#58)" | Clean | — |
+| 27 | [`38d45333`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/38d45333) | [`611141f3`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/611141f3dccf668a2f0e5e801c085c2971ea020f) | Enable DeepSeek R1 inference on XPU | Conflict | `tuning_fused_moe_triton.py`: 90%<br>`tuning_block_wise_kernel.py`: 95% |
+| 28 | [`9f466ccb`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/9f466ccb) | — | Update tuning_fused_moe_triton.py | Skipped (empty cherry-pick) | — |
+| 29 | [`8f861acb`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/8f861acb) | — | integrate rms_norm | Skipped (empty cherry-pick) | — |
+| 30 | [`3732daa0`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/3732daa0) | [`6db817d6`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/6db817d60c2defb46a575a23783584c74da691a5) | add fid accuracy benchmark for sglang diffusion | Clean | — |
+| 31 | [`ad1b5d73`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/ad1b5d73) | [`73d0efc3`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/73d0efc3904134de1a1995d368f1357a07a66f7a) | Enable topk logits dump to verify accuracy (#65) | Conflict | `bench_one_batch.py`: 88% |
+| 32 | [`6d7d63d2`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/6d7d63d2) | [`401c9424`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/401c9424e2070e5196063640c1733b84fa1991c4) | Enable benchmark to test with image inputs for Multimodal. | Conflict | `bench_one_batch.py`: 85% |
+| 33 | [`0816fa87`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/0816fa87) | [`5428d531`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/5428d531aad29250e4f237e223e9362bbeb4aa16) | Make UTs compatible for XPU runs (#67) | Clean | — |
+| 34 | [`e7d99d97`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/e7d99d97) | [`ac3870b7`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/ac3870b7b9a1457d7591e15ff5ee92559cb37772) | Update fused_moe.py to revert temporary changes | Clean | — |
+| 35 | [`52152319`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/52152319) | — | Adding correct path for module not found error while collecting test (#73) | Skipped (upstream match → a0d085c1) | 97% similar |
+| 36 | [`a03084a1`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/a03084a1) | [`ad9b92a8`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/ad9b92a82e6de870cef0d29bab01305a41a123a6) | Adding correct path for module not found error while collecting test (#74) | Conflict (upstream match a0d085c1 97%) | `test_vmoba_attn.py`: 97% |
+| 37 | [`cc8342c7`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/cc8342c7) | [`00efdd34`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/00efdd34eb932ca4f6528c81bbf6d1a805ad5ac6) | fix multiple prompts generations | Conflict | `sampling_params.py`: 90%<br>`diffusion_generator.py`: 95% |
+| 38 | [`7ea2b65f`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/7ea2b65f) | [`4232bae5`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/4232bae5ebceb19eb1b553f70372337d992536ad) | [SGLANGT-557] Use device-agnostic helpers for Mamba tests (#77) | Conflict | `test_mamba2_mixer.py`: 95% |
+| 39 | [`eb59db43`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/eb59db43) | — | [SGLANGT-557] Use correct tolerance for bf16 test (#85) | Skipped (empty cherry-pick) | — |
+| 40 | [`8ea48734`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/8ea48734) | [`408f3164`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/408f3164f1a55439c834958565587a6081483dd1) | work around to support fp32 in  RotaryEmbedding until there is a fix for torch.ops.sgl_kernel.rotary_embedding use SGLANG_XPU_USE_ROPE_NATIVE to fall back to native path | Conflict | `rotary_embedding.py`: N/A |
+| 41 | [`d098fa21`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/d098fa21) | [`307af80f`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/307af80ffe75f86081472d7bf39aa9f6f1e5db7a) | Support --correctness-test for bench_one_batch | Conflict | `bench_one_batch.py`: 72% |
+| 42 | [`dcee9fce`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/dcee9fce) | [`640c9b41`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/640c9b4140fc8154a466a8184a4e8c0f8565b9c9) | [SGLANGT-666]: skip check count of chunked reqs with req_pool_idx | Conflict | `memory_pool.py`: 72% |
+| 43 | [`49651e30`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/49651e30) | — | router scaling is done in moe_sum_reduce & fix EP | Skipped (empty cherry-pick) | — |
+| 44 | [`76d9e33e`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/76d9e33e) | [`cf807d2e`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/cf807d2e1a1877c6844449dfb4c47c0dc75b808b) | add xpu attn backend | Clean | — |
+| 45 | [`4d0ed336`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/4d0ed336) | [`8f90d7d8`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/8f90d7d8f280a8b0a1bde6d646b0b1c1886ffec1) | fix interface | Clean | — |
+| 46 | [`ccb59ae5`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/ccb59ae5) | [`bbd06846`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/bbd06846a881a298f302b430cd3901279166ffa2) | fix xpu attn backend interface | Conflict | `layernorm.py`: 95% |
+| 47 | [`7ee5b21a`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/7ee5b21a) | [`8c3b303c`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/8c3b303c2126a4f4b80726cd2f524545aea20af1) | update xpu attention name | Conflict | `layernorm.py`: 95% |
+| 48 | [`533b0bd6`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/533b0bd6) | [`cae0e982`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/cae0e9829a2bca9eab61c21c0b8b2073799c7e3e) | Adding changes for xpu support for test_index_buf_accessor | Clean | — |
+| 49 | [`44253471`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/44253471) | [`bb3b75c9`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/bb3b75c985c6c56fe679ee78177b859c23889d86) | Added support for xpu for test_index_buf_accessor | Clean | — |
+| 50 | [`099c3de1`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/099c3de1) | [`aeb3a1b7`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/aeb3a1b78f22efed28b8dc3997eaf6257ab86d19) | Added xpu support for test_layernorm | Clean | — |
+| 51 | [`4f03a1c8`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/4f03a1c8) | [`b7d08e7d`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/b7d08e7da890a9e4948490b884070d6413c279bb) | Added support for xpu for test_trtllm_fp8_kv_kernel | Clean | — |
+| 52 | [`3fd442d8`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/3fd442d8) | [`a63407f2`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/a63407f259d6bb729e0595e58b49d887eaeaf481) | Apply suggestion from @Copilot | Clean | — |
+| 53 | [`c995a855`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/c995a855) | [`6c8bf69a`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/6c8bf69a21613ed9c7c336688aa5b632102f0d98) | Apply suggestion from @Copilot | Clean | — |
+| 54 | [`a2bdae50`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/a2bdae50) | [`a0f025c1`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/a0f025c1e6da56483f75d90f03d08bbcd42b19fa) | Update test_index_buf_accessor.py | Clean | — |
+| 55 | [`cd908b94`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/cd908b94) | [`6c7f1a93`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/6c7f1a93ba29e2eb85873898696a6ea161f49497) | Update test_trtllm_fp8_kv_kernel.py | Clean | — |
+| 56 | [`8ea66cef`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/8ea66cef) | [`5c189bad`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/5c189bad33baf82f81d26e9cf10376d8351a7f89) | Update test_index_buf_accessor.py | Clean | — |
+| 57 | [`0a5141df`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/0a5141df) | [`4ca83a82`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/4ca83a82db322613e8076957b0d4f0d06d2a40c1) | Update test_trtllm_fp8_kv_kernel.py | Clean | — |
+| 58 | [`72f07e60`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/72f07e60) | [`3dd9ef1d`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/3dd9ef1d593b5c51f012d61d6dde84706fdbb63d) | [Intel GPU] Upgrade pytorch xpu version to 2.11 (#101) | Conflict (upstream match b2dd104a 93%) | `pyproject_xpu.toml`: 90%<br>`xpu.md`: 92%<br>`xpu.Dockerfile`: 97% |
+| 59 | [`be71e832`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/be71e832) | [`e72ca3cd`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/e72ca3cd26a248ac16b7bc2aea87f2ae5f93e8e0) | Port Sarvam model to XPU (#96) | Conflict | `model_config.py`: 100% |
+| 60 | [`7c056bc1`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/7c056bc1) | [`6cd8f1db`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/6cd8f1dbe456280aa1a6c8e794b232925f294aee) | Added xpu support and device select using get_device function (#105) | Clean | — |
+| 61 | [`0dfd45c7`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/0dfd45c7) | [`64b01793`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/64b01793761e137afc8579d3bbc6719709510f58) | Add Intel XPU support to test_kda_kernels.py (#109) | Clean | — |
+| 62 | [`610f728b`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/610f728b) | [`b5473698`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/b5473698fed486b89b0b442da56dac59506343e8) | Support apply_router_weight_on_input for llama4 for fused_experts (#103) | Clean | — |
+| 63 | [`44deed32`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/44deed32) | [`4f879cda`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/4f879cdaa1c369c1a6c04d398440662c8c30f0a7) | Sync make_local_attention_virtual_batches with upstream vLLM (#110) | Conflict | `flashattention_backend.py`: 100% |
+| 64 | [`f6941927`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/f6941927) | [`6ee00594`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/6ee00594d756a51149262a6c63854d7efac7c70a) | Add Triton fallback for moe_align_block_size (#107) | Clean | — |
+| 65 | [`715f9cb7`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/715f9cb7) | [`ab46f934`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/ab46f934e1a21d5142779e24766141a44814d604) | Skip redundant moe_sum_reduce for single-expert routing on XPU (#108) | Clean | — |
+| 66 | [`4a4a8282`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/4a4a8282) | [`3fa42352`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/3fa423527765d3df424a62b374bc2e10e8602cf5) | Normalize local page table values (#106) | Clean | — |
 
-## Commits Needing Closest Review
+## Summary
 
-1. #21 dff1c7b2 — flux.py scored 52% (XPU+RoPE interaction unclear)
-   File: python/sglang/multimodal_gen/runtime/models/dits/flux.py
-   Reason: Complex conflict merging XPU platform branching with the new apply_qk_norm_with_optional_rope API
+| Metric | Value |
+|--------|-------|
+| Total commits | 66 |
+| Clean cherry-picks | 36 |
+| Skipped (empty cherry-pick) | 5 |
+| Skipped (upstream match) | 1 |
+| Conflicts resolved | 24 |
+| Total files resolved | 35 |
+| Average confidence | **89%** |
 
-2. #37 cc8342c7 — diffusion_generator.py scored 62% (prompt restructuring ambiguity)
-   File: python/sglang/multimodal_gen/runtime/entrypoints/diffusion_generator.py
-   Reason: Upstream added prompt_path support while internal simplified _resolve_prompts
+## Skipped Commits — Upstream Match Details
 
-3. #40 8ea48734 — rotary_embedding.py scored N/A (response too long for confidence marker)
-   File: python/sglang/srt/layers/rotary_embedding.py
-   Reason: No confidence score returned, recommend manual review
+| Internal SHA | Internal Subject | Upstream SHA | Upstream Subject | Similarity |
+|-------------|-----------------|-------------|-----------------|------------|
+| [`52152319`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/52152319) | Adding correct path for module not found error while collecting test (#73) | [`a0d085c1`](https://github.com/sgl-project/sglang/commit/a0d085c1) | Adding correct path for module not found error while collecting test (#19778) | 97% |
 
-## Confidence Score Guide
+## Files Needing Manual Review (< 70%)
 
-| Score | Meaning |
-|---|---|
-| 90-100% | Trivial or straightforward conflict |
-| 70-89% | Moderate complexity, high confidence |
-| 50-69% | Complex conflict, review recommended |
-| 0-49% | Significant uncertainty, manual review strongly recommended |
-
-Generated by rebase-agent on 2026-04-07.
+| File | Confidence | Internal SHA | Rebase SHA |
+|------|------------|-------------|------------|
+| `python/sglang/srt/layers/rotary_embedding.py` | **N/A** | [`8ea48734`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/8ea48734) — work around to support fp32 in  RotaryEmbedding until there is a fix for torch.ops.sgl_kernel.rotary_embedding use SGLANG_XPU_USE_ROPE_NATIVE to fall back to native path | [`408f3164`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/408f3164f1a55439c834958565587a6081483dd1) |
+| `python/sglang/multimodal_gen/runtime/models/dits/flux.py` | **52%** | [`dff1c7b2`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/dff1c7b2) — Enable Sglang diffusion with flux.1-dev  (#53) | [`3724a109`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/3724a109b4fdf44314ce2dacfadde6748f9fce22) |

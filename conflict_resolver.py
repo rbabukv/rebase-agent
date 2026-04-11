@@ -502,7 +502,7 @@ def _resolve_full_file(
 
 
 # Threshold: if file content > this many chars, use chunk-based resolution
-LARGE_FILE_THRESHOLD = 20_000
+LARGE_FILE_THRESHOLD = 40_000
 
 
 def resolve_conflict(
