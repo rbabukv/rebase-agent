@@ -19,6 +19,7 @@ Environment variables:
 
 import argparse
 import logging
+import re
 import sys
 from dataclasses import dataclass
 from datetime import date
@@ -55,10 +56,17 @@ class SkippedCommit:
 
 
 @dataclass
+class RevertPair:
+    """A matched pair of original + revert commits that cancel each other out."""
+    original: InternalCommit
+    revert: InternalCommit
+
+
+@dataclass
 class CommitOutcome:
     """Tracks the outcome of each commit during the cherry-pick loop."""
     commit: InternalCommit
-    status: str  # "Clean", "Conflict", "Skipped (upstream match)", "Skipped (empty)"
+    status: str  # "Clean", "Conflict", "Skipped (upstream match)", "Skipped (empty)", "Skipped (revert pair)"
     confidence: str = "—"  # e.g., "85%", "90-95% (2 files)", "—"
     rebase_sha: str = "—"  # SHA on the rebased branch, or "—" if skipped
 
@@ -77,6 +85,59 @@ def _find_upstream_match(
     if best_match and best_ratio > threshold:
         return (best_match, best_ratio)
     return None
+
+
+def _find_revert_pairs(commits: list[InternalCommit]) -> tuple[list[RevertPair], set[str]]:
+    """
+    Scan commits to find original+revert pairs where both are in the list.
+
+    Detection:
+    1. Message body contains 'This reverts commit <sha>.' — match by SHA.
+    2. Subject matches 'Revert "<original subject>"' — match by subject.
+
+    Returns (list of RevertPair, set of SHAs to skip).
+    Only pairs where BOTH the original and its revert are present are returned.
+    """
+    sha_index = {c.sha: c for c in commits}
+    subject_index: dict[str, InternalCommit] = {}
+    for c in commits:
+        # First commit with a given subject wins (the original)
+        if c.subject not in subject_index:
+            subject_index[c.subject] = c
+
+    pairs: list[RevertPair] = []
+    seen_shas: set[str] = set()
+    revert_sha_re = re.compile(r"This reverts commit ([0-9a-f]{7,40})\b")
+
+    for commit in commits:
+        if commit.sha in seen_shas:
+            continue
+
+        original: InternalCommit | None = None
+
+        # Strategy 1: parse "This reverts commit <sha>." from message body
+        m = revert_sha_re.search(commit.message)
+        if m:
+            reverted_sha = m.group(1)
+            # Match full SHA or prefix
+            for candidate_sha, candidate in sha_index.items():
+                if candidate_sha.startswith(reverted_sha) or reverted_sha.startswith(candidate_sha):
+                    original = candidate
+                    break
+
+        # Strategy 2: subject pattern  Revert "<original subject>"
+        if original is None:
+            revert_match = re.match(r'^Revert "(.+)"$', commit.subject)
+            if revert_match:
+                orig_subject = revert_match.group(1)
+                original = subject_index.get(orig_subject)
+
+        if original is not None and original.sha != commit.sha and original.sha not in seen_shas:
+            pairs.append(RevertPair(original=original, revert=commit))
+            seen_shas.add(original.sha)
+            seen_shas.add(commit.sha)
+
+    return pairs, seen_shas
 
 
 def _notify(config: RebaseConfig, result: RebaseResult):
@@ -122,6 +183,7 @@ def _log_commit_breakdown(outcomes: list[CommitOutcome]):
     conflict_count = 0
     skipped_match_count = 0
     skipped_empty_count = 0
+    skipped_revert_count = 0
 
     for i, o in enumerate(outcomes, 1):
         desc = o.commit.subject[:45]
@@ -138,6 +200,8 @@ def _log_commit_breakdown(outcomes: list[CommitOutcome]):
             skipped_match_count += 1
         elif o.status.startswith("Skipped (empty"):
             skipped_empty_count += 1
+        elif o.status.startswith("Skipped (revert"):
+            skipped_revert_count += 1
 
     logger.info("-" * 150)
     parts = [f"Total: {len(outcomes)}"]
@@ -149,6 +213,8 @@ def _log_commit_breakdown(outcomes: list[CommitOutcome]):
         parts.append(f"Skipped (upstream match): {skipped_match_count}")
     if skipped_empty_count:
         parts.append(f"Skipped (empty): {skipped_empty_count}")
+    if skipped_revert_count:
+        parts.append(f"Skipped (revert pair): {skipped_revert_count}")
     logger.info(" | ".join(parts))
 
 
@@ -176,6 +242,7 @@ def _generate_rebase_summary(
     outcomes: list[CommitOutcome],
     confidence_scores: list[FileConfidence],
     skipped_commits: list[SkippedCommit],
+    revert_pairs: list[RevertPair] | None = None,
     command: str = "",
 ) -> str:
     """Generate a markdown rebase summary report and return its content."""
@@ -230,6 +297,7 @@ def _generate_rebase_summary(
     conflict_count = sum(1 for o in outcomes if o.status.startswith("Conflict"))
     skipped_empty_count = sum(1 for o in outcomes if o.status.startswith("Skipped (empty"))
     skipped_match_count = len(skipped_commits)
+    skipped_revert_count = sum(1 for o in outcomes if o.status.startswith("Skipped (revert"))
 
     valid_scores = [s.confidence for s in confidence_scores if s.confidence >= 0]
     avg_conf = sum(valid_scores) / len(valid_scores) if valid_scores else 0
@@ -244,6 +312,8 @@ def _generate_rebase_summary(
         lines.append(f"| Skipped (empty cherry-pick) | {skipped_empty_count} |")
     if skipped_match_count:
         lines.append(f"| Skipped (upstream match) | {skipped_match_count} |")
+    if skipped_revert_count:
+        lines.append(f"| Skipped (revert pair) | {skipped_revert_count} |")
     lines.append(f"| Conflicts resolved | {conflict_count} |")
     lines.append(f"| Total files resolved | {len(confidence_scores)} |")
     lines.append(f"| Average confidence | **{avg_conf:.0f}%** |")
@@ -261,6 +331,21 @@ def _generate_rebase_summary(
             lines.append(
                 f"| {int_link} | {sc.commit.subject} "
                 f"| {up_link} | {sc.upstream_subject} | {sc.similarity:.0%} |"
+            )
+        lines.append("")
+
+    # --- Skipped Commits — Revert Pair Details ---
+    if revert_pairs:
+        lines.append("## Skipped Commits — Revert Pair Details")
+        lines.append("")
+        lines.append("| Original SHA | Original Subject | Revert SHA | Revert Subject |")
+        lines.append("|-------------|-----------------|-----------|---------------|")
+        for rp in revert_pairs:
+            orig_link = _commit_link(internal_url, rp.original.sha)
+            rev_link = _commit_link(internal_url, rp.revert.sha)
+            lines.append(
+                f"| {orig_link} | {rp.original.subject} "
+                f"| {rev_link} | {rp.revert.subject} |"
             )
         lines.append("")
 
@@ -405,7 +490,18 @@ def run_rebase_agent(config: RebaseConfig, push: bool = False, command: str = ""
         for i, c in enumerate(commits, 1):
             logger.info("  %d. %s %s", i, c.sha[:8], c.subject)
 
-        # Step 2b: Fetch upstream commit subjects for similarity matching
+        # Step 2b: Detect revert pairs (original + revert both present)
+        revert_pairs, revert_skip_shas = _find_revert_pairs(commits)
+        if revert_pairs:
+            logger.info("=== Detected %d revert pair(s) — both sides will be skipped ===", len(revert_pairs))
+            for rp in revert_pairs:
+                logger.info(
+                    "  Original: %s %s  ←→  Revert: %s %s",
+                    rp.original.sha[:8], rp.original.subject,
+                    rp.revert.sha[:8], rp.revert.subject,
+                )
+
+        # Step 2c: Fetch upstream commit subjects for similarity matching
         logger.info("=== Fetching upstream commit subjects (last 1 year) ===")
         upstream_commits = git.get_upstream_commit_subjects(since_days=365)
 
@@ -417,6 +513,25 @@ def run_rebase_agent(config: RebaseConfig, push: bool = False, command: str = ""
         logger.info("=== Cherry-picking internal commits ===")
         for i, commit in enumerate(commits, 1):
             logger.info("--- Commit %d/%d: %s %s ---", i, len(commits), commit.sha[:8], commit.subject)
+
+            # Check if commit is part of a revert pair — skip if so
+            if commit.sha in revert_skip_shas:
+                # Find the paired commit for logging
+                paired = None
+                for rp in revert_pairs:
+                    if rp.original.sha == commit.sha:
+                        paired = rp.revert
+                        break
+                    if rp.revert.sha == commit.sha:
+                        paired = rp.original
+                        break
+                paired_desc = f"{paired.sha[:8]} {paired.subject}" if paired else "unknown"
+                logger.info("  Skipping — part of revert pair (paired with %s)", paired_desc)
+                commit_outcomes.append(CommitOutcome(
+                    commit=commit,
+                    status=f"Skipped (revert pair with {paired.sha[:8]})" if paired else "Skipped (revert pair)",
+                ))
+                continue
 
             # Check if commit subject matches an upstream commit (>85% similarity)
             upstream_match_info: tuple[UpstreamCommit, float] | None = None
@@ -495,6 +610,33 @@ def run_rebase_agent(config: RebaseConfig, push: bool = False, command: str = ""
                 ))
                 return False
 
+            # Skip commits that closely match upstream: subject >90% AND all
+            # resolved-file confidence scores >80% means the differences are
+            # trivial and the commit is effectively already upstream.
+            if upstream_match_info:
+                uc, sim = upstream_match_info
+                commit_conf = [s for s in confidence_scores if s.commit_sha == commit.sha[:8]]
+                all_high_conf = commit_conf and all(fc.confidence > 80 for fc in commit_conf)
+                if sim > 0.90 and all_high_conf:
+                    logger.info(
+                        "  Skipping commit — upstream match %s (%.0f%% subject, all files >80%% confidence). "
+                        "Differences are trivial.",
+                        uc.sha[:8], sim * 100,
+                    )
+                    git.abort_cherry_pick()
+                    skipped_commits.append(SkippedCommit(
+                        commit=commit,
+                        upstream_sha=uc.sha,
+                        upstream_subject=uc.subject,
+                        similarity=sim,
+                    ))
+                    commit_outcomes.append(CommitOutcome(
+                        commit=commit,
+                        status=f"Skipped (upstream match {uc.sha[:8]} {sim:.0%}, trivial diff)",
+                        confidence=f"{sim:.0%} similar",
+                    ))
+                    continue
+
             # Commit the resolved cherry-pick
             if not git.continue_cherry_pick(commit, resolved_files=round_resolved):
                 git.abort_cherry_pick()
@@ -546,7 +688,7 @@ def run_rebase_agent(config: RebaseConfig, push: bool = False, command: str = ""
         # Generate and write rebase summary report
         md_content = _generate_rebase_summary(
             config, branch_name, commit_outcomes,
-            confidence_scores, skipped_commits, command,
+            confidence_scores, skipped_commits, revert_pairs, command,
         )
         upstream_label = config.upstream_base or config.upstream_branch
         md_filename = f"rebase_summary_{upstream_label}.md"
