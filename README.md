@@ -28,6 +28,9 @@ Each conflict resolution gets a confidence score (0-100%):
 
 For chunk mode, the minimum score across all blocks is used (weakest-link principle).
 
+### Skip Commits
+Pass `--skip-commits` with a comma-separated list of SHA prefixes to unconditionally skip specific commits during the cherry-pick loop. Useful for commits that are known to be already merged upstream, temporary workarounds, or commits with unresolvable dependencies on other skipped work.
+
 ### Upstream Duplicate Detection
 Before cherry-picking, the agent fetches upstream commit subjects from the last year and compares them using fuzzy string matching (`difflib.SequenceMatcher`, >85% threshold). However, **subject matching alone never skips a commit** — the agent always attempts the cherry-pick and lets git confirm:
 
@@ -102,6 +105,7 @@ python agent.py \
 | `--work-dir` | temp dir | Working directory for the clone |
 | `--model` | `us.anthropic.claude-opus-4-6-v1` | Bedrock model ID for conflict resolution |
 | `--aws-region` | `us-east-1` | AWS region for Bedrock |
+| `--skip-commits` | — | Comma-separated SHA prefixes to skip during cherry-pick |
 | `--max-prs` | `10` | Max PRs to fetch per conflicted file |
 | `--teams-webhook` | — | Microsoft Teams Incoming Webhook URL |
 | `-v, --verbose` | off | Enable debug logging |
@@ -117,7 +121,7 @@ python agent.py \
 | `AWS_SESSION_TOKEN` | AWS session token (optional, for temporary credentials) |
 | `TEAMS_WEBHOOK_URL` | Microsoft Teams webhook URL |
 
-### Example
+### Examples
 
 ```bash
 # Rebase internal fork onto upstream tag v0.5.10, starting from a specific commit
@@ -128,6 +132,15 @@ python agent.py \
   --internal-start d0eec66 \
   --work-dir ./workspace \
   --push
+
+# Skip known-merged or problematic commits
+python agent.py \
+  --internal git@github.com:myorg/myrepo.git \
+  --upstream https://github.com/upstream/repo.git \
+  --upstream-base v0.5.11 \
+  --internal-start 1519acf \
+  --skip-commits "1519acf,f678e997,4b172f2c,14c79c0a" \
+  --work-dir ./workspace -v
 ```
 
 ## Output

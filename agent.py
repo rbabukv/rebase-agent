@@ -453,7 +453,7 @@ def _resolve_cherry_pick_conflicts(
     return round_resolved
 
 
-def run_rebase_agent(config: RebaseConfig, push: bool = False, command: str = "") -> bool:
+def run_rebase_agent(config: RebaseConfig, push: bool = False, command: str = "", skip_commits: list[str] | None = None) -> bool:
     """
     Main agent loop:
     1. Clone internal repo, add upstream remote
@@ -513,6 +513,14 @@ def run_rebase_agent(config: RebaseConfig, push: bool = False, command: str = ""
         logger.info("=== Cherry-picking internal commits ===")
         for i, commit in enumerate(commits, 1):
             logger.info("--- Commit %d/%d: %s %s ---", i, len(commits), commit.sha[:8], commit.subject)
+
+            # Check if commit is in the user-provided skip list
+            if skip_commits and any(commit.sha.startswith(s) for s in skip_commits):
+                logger.info("  Skipping — user-specified skip list")
+                commit_outcomes.append(CommitOutcome(
+                    commit=commit, status="Skipped (user-specified)",
+                ))
+                continue
 
             # Check if commit is part of a revert pair — skip if so
             if commit.sha in revert_skip_shas:
@@ -741,6 +749,7 @@ def main():
     parser.add_argument("--aws-region", default="", help="AWS region for Bedrock (default: us-east-1)")
     parser.add_argument("--max-prs", type=int, default=10, help="Max PRs to fetch per file")
     parser.add_argument("--teams-webhook", default="", help="Microsoft Teams Incoming Webhook URL")
+    parser.add_argument("--skip-commits", default="", help="Comma-separated list of commit SHAs (prefix match) to skip during cherry-pick")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")
     args = parser.parse_args()
 
@@ -762,8 +771,10 @@ def main():
         teams_webhook_url=args.teams_webhook,
     )
 
+    skip_commits = [s.strip() for s in args.skip_commits.split(",") if s.strip()] if args.skip_commits else []
+
     command = "python " + " ".join(sys.argv)
-    success = run_rebase_agent(config, push=args.push, command=command)
+    success = run_rebase_agent(config, push=args.push, command=command, skip_commits=skip_commits)
     sys.exit(0 if success else 1)
 
 
