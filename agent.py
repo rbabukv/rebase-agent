@@ -298,6 +298,8 @@ def _generate_rebase_summary(
     skipped_empty_count = sum(1 for o in outcomes if o.status.startswith("Skipped (empty"))
     skipped_match_count = len(skipped_commits)
     skipped_revert_count = sum(1 for o in outcomes if o.status.startswith("Skipped (revert"))
+    skipped_user_count = sum(1 for o in outcomes if o.status == "Skipped (user-specified)")
+    total_skipped = skipped_empty_count + skipped_match_count + skipped_revert_count + skipped_user_count
 
     valid_scores = [s.confidence for s in confidence_scores if s.confidence >= 0]
     avg_conf = sum(valid_scores) / len(valid_scores) if valid_scores else 0
@@ -308,13 +310,16 @@ def _generate_rebase_summary(
     lines.append("|--------|-------|")
     lines.append(f"| Total commits | {len(outcomes)} |")
     lines.append(f"| Clean cherry-picks | {clean_count} |")
-    if skipped_empty_count:
-        lines.append(f"| Skipped (empty cherry-pick) | {skipped_empty_count} |")
-    if skipped_match_count:
-        lines.append(f"| Skipped (upstream match) | {skipped_match_count} |")
-    if skipped_revert_count:
-        lines.append(f"| Skipped (revert pair) | {skipped_revert_count} |")
     lines.append(f"| Conflicts resolved | {conflict_count} |")
+    lines.append(f"| **Total skipped** | **{total_skipped}** |")
+    if skipped_user_count:
+        lines.append(f"|   ↳ User-specified | {skipped_user_count} |")
+    if skipped_empty_count:
+        lines.append(f"|   ↳ Empty cherry-pick | {skipped_empty_count} |")
+    if skipped_match_count:
+        lines.append(f"|   ↳ Upstream match | {skipped_match_count} |")
+    if skipped_revert_count:
+        lines.append(f"|   ↳ Revert pair | {skipped_revert_count} |")
     lines.append(f"| Total files resolved | {len(confidence_scores)} |")
     lines.append(f"| Average confidence | **{avg_conf:.0f}%** |")
     lines.append("")
@@ -426,6 +431,26 @@ def _resolve_cherry_pick_conflicts(
 
     round_resolved: list[str] = []
     for conflict in conflicts:
+        # Check if file exists in the upstream base — if not, it should not be
+        # in the rebased branch. Remove it and warn the user.
+        if not git.file_exists_in_upstream(conflict.path):
+            logger.warning(
+                "  ⚠ File %s does NOT exist in upstream base — removing from commit. "
+                "This file was likely added by a previous internal commit and should not "
+                "be carried forward. Flagging for review in summary.",
+                conflict.path,
+            )
+            git.remove_file_from_index(conflict.path)
+            round_resolved.append(conflict.path)
+            resolved_files_all.append(conflict.path)
+            confidence_scores.append(FileConfidence(
+                path=conflict.path,
+                commit_sha=commit.sha[:8],
+                confidence=-1,
+                reasoning="file not in upstream; removed from commit — review if intended",
+            ))
+            continue
+
         logger.info("  Fetching PR context for %s...", conflict.path)
         pr_contexts = fetch_pr_context_for_file(config, conflict.path)
 
@@ -679,7 +704,7 @@ def run_rebase_agent(config: RebaseConfig, push: bool = False, command: str = ""
                 commit=commit, status=status,
                 confidence=conf_detail, rebase_sha=rebase_sha,
             ))
-            logger.info("  Committed with [Conflict resolved] tag.")
+            logger.info("  Committed resolved cherry-pick.")
 
         # Step 5: Done!
         logger.info("=== All %d commits cherry-picked successfully! ===", len(commits))

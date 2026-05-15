@@ -237,7 +237,7 @@ class GitOperations:
         if resolved_files:
             file_list = ", ".join(resolved_files)
             msg = (
-                f"[Conflict resolved] {original_commit.message.rstrip()}\n\n"
+                f"{original_commit.message.rstrip()}\n\n"
                 f"Conflict resolved by rebase-agent in: {file_list}"
             )
         else:
@@ -314,6 +314,16 @@ class GitOperations:
 
         logger.info("Fetched %d upstream commit subjects (last %d days)", len(commits), since_days)
         return commits
+
+    def file_exists_in_upstream(self, filepath: str) -> bool:
+        """Check if a file exists in the upstream base ref."""
+        upstream_ref = self._upstream_ref()
+        result = self._run("cat-file", "-e", f"{upstream_ref}:{filepath}")
+        return result.returncode == 0
+
+    def remove_file_from_index(self, filepath: str):
+        """Remove a file from the index and working tree during conflict resolution."""
+        self._run("rm", "-f", filepath)
 
     def get_branch_name(self) -> str:
         """Get the current branch name."""
