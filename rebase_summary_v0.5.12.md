@@ -8,7 +8,7 @@
 ## Command
 
 ```bash
-python /home/rbabu/rebase-agent/agent.py --internal https://github.com/intel-innersource/frameworks.ai.pytorch.sglang --upstream https://github.com/sgl-project/sglang --internal-branch master_next --upstream-branch main --github-repo intel-innersource/frameworks.ai.pytorch.sglang --work-dir /home/rbabu/rebase-agent/workspace --upstream-base v0.5.12 --internal-start 1519acf --skip-commits 1519acf,f678e997,4b172f2c,14c79c0a,087a1449,615596c5,7c85481e,1c428612,b5fd30ce,87a5f428,e483a64d,3166c01f,3a7e43c0,d3c336fc,10dc37d6,c528b5b6,4efdd7df,daa66e72,1d57bc81,76754ff3,19e16eab,b58a077e -v
+python /home/rbabu/rebase-agent/agent.py --internal https://github.com/intel-innersource/frameworks.ai.pytorch.sglang --upstream https://github.com/sgl-project/sglang --internal-branch master_next --upstream-branch main --github-repo intel-innersource/frameworks.ai.pytorch.sglang --work-dir /home/rbabu/rebase-agent/workspace --upstream-base v0.5.12 --internal-start 1519acf --skip-commits 1519acf,f678e997,4b172f2c,14c79c0a,087a1449,615596c5,7c85481e,1c428612,b5fd30ce,87a5f428,e483a64d,3166c01f,3a7e43c0,d3c336fc,10dc37d6,4efdd7df,daa66e72,1d57bc81,76754ff3,19e16eab,b58a077e -v
 ```
 
 ## Per-Commit Breakdown
@@ -50,7 +50,7 @@ python /home/rbabu/rebase-agent/agent.py --internal https://github.com/intel-inn
 | 33 | [`87a5f428`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/87a5f4289bf89dbaee1c070ab4d7d66411854a87) | — | Support apply_router_weight_on_input for llama4 for fused_experts (#103) | Skipped (user-specified) | — |
 | 34 | [`2e79eb99`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/2e79eb99fe281822977cf6d688a5596c2014ed07) | [`6d870c50`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/6d870c50000df2603bd750e1c8d1b9d037fceab9) | Sync make_local_attention_virtual_batches with upstream vLLM (#110) | Clean | — |
 | 35 | [`b14ea4f3`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/b14ea4f3b46766acd468da8affaa8934d7ed7c5c) | [`b6f062a3`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/b6f062a3dfc8d8a65c3b4c546b395fec03c21905) | Add Triton fallback for moe_align_block_size (#107) | Conflict | `moe_align_block_size.py`: 95% |
-| 36 | [`c528b5b6`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/c528b5b6185f3270814e3c4e66b992f80bb4c6ff) | — | Skip redundant moe_sum_reduce for single-expert routing on XPU (#108) | Skipped (user-specified) | — |
+| 36 | [`c528b5b6`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/c528b5b6185f3270814e3c4e66b992f80bb4c6ff) | [`9a637be4`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/9a637be459a2e004bbf3c8a29c4ef090aad20158) | Skip redundant moe_sum_reduce for single-expert routing on XPU (#108) | Conflict (manual) | `fused_moe.py`: 100% |
 | 37 | [`91dd3aeb`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/91dd3aeb73dd4897b373970f6ca1841d7f093664) | [`6c13ec7d`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/6c13ec7db63b9c2c980d0553dc3351719fe6b94c) | Normalize local page table values (#106) | Clean | — |
 | 38 | [`87f6a243`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/87f6a243c941729c6626a1edfde9e159bf49050c) | [`d7e1fcaf`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/d7e1fcaf3a55ab98880a2cf84bec249f9de7e6d7) | add activation func for ZLM t2i on xpu | Conflict | `activation.py`: 82% |
 | 39 | [`10dc37d6`](https://github.com/intel-innersource/frameworks.ai.pytorch.sglang/commit/10dc37d6cd9de3d5461f51b3c6cabe98f907281b) | — | Pass alpha and limit params in xpu fused_xperts moe kernel call for GPT-OSS bf16 model (#112) | Skipped (user-specified) | — |
@@ -69,11 +69,11 @@ python /home/rbabu/rebase-agent/agent.py --internal https://github.com/intel-inn
 |--------|-------|
 | Total commits | 47 |
 | Clean cherry-picks | 20 |
-| Conflicts resolved | 5 |
-| **Total skipped** | **22** |
-|   ↳ User-specified | 22 |
-| Total files resolved | 5 |
-| Average confidence | **93%** |
+| Conflicts resolved | 6 |
+| **Total skipped** | **21** |
+|   ↳ User-specified | 21 |
+| Total files resolved | 6 |
+| Average confidence | **94%** |
 
 ## Resolution Warnings
 
