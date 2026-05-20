@@ -354,6 +354,23 @@ def _generate_rebase_summary(
             )
         lines.append("")
 
+    # --- Resolution Warnings ---
+    over_resolved = [s for s in confidence_scores if "over-resolution" in s.reasoning]
+    not_in_upstream = [s for s in confidence_scores if "not in upstream" in s.reasoning]
+    warning_files = over_resolved + not_in_upstream
+    if warning_files:
+        lines.append("## Resolution Warnings")
+        lines.append("")
+        lines.append("| File | Issue | Internal SHA | Rebase SHA |")
+        lines.append("|------|-------|-------------|------------|")
+        for s in warning_files:
+            matching = [o for o in outcomes if o.commit.sha[:8] == s.commit_sha]
+            subject = matching[0].commit.subject if matching else ""
+            int_link = _commit_link(internal_url, matching[0].commit.sha) if matching else f"`{s.commit_sha}`"
+            rebase = _commit_link(internal_url, matching[0].rebase_sha) if matching and matching[0].rebase_sha != "—" else "—"
+            lines.append(f"| `{s.path}` | {s.reasoning} | {int_link} — {subject} | {rebase} |")
+        lines.append("")
+
     # --- Files Needing Manual Review ---
     low_conf = [s for s in confidence_scores if 0 <= s.confidence < 70]
     na_conf = [s for s in confidence_scores if s.confidence < 0]
@@ -361,8 +378,8 @@ def _generate_rebase_summary(
     if review_files:
         lines.append("## Files Needing Manual Review (< 70%)")
         lines.append("")
-        lines.append("| File | Confidence | Internal SHA | Rebase SHA |")
-        lines.append("|------|------------|-------------|------------|")
+        lines.append("| File | Confidence | Reason | Internal SHA | Rebase SHA |")
+        lines.append("|------|------------|--------|-------------|------------|")
         for s in sorted(review_files, key=lambda x: x.confidence):
             score_str = f"**{s.confidence}%**" if s.confidence >= 0 else "**N/A**"
             # Find the matching outcome to get commit subject and rebase SHA
@@ -370,7 +387,7 @@ def _generate_rebase_summary(
             subject = matching[0].commit.subject if matching else ""
             int_link = _commit_link(internal_url, matching[0].commit.sha) if matching else f"`{s.commit_sha}`"
             rebase = _commit_link(internal_url, matching[0].rebase_sha) if matching and matching[0].rebase_sha != "—" else "—"
-            lines.append(f"| `{s.path}` | {score_str} | {int_link} — {subject} | {rebase} |")
+            lines.append(f"| `{s.path}` | {score_str} | {s.reasoning} | {int_link} — {subject} | {rebase} |")
         lines.append("")
 
     return "\n".join(lines)
@@ -408,6 +425,66 @@ def _make_result(config: RebaseConfig, **kwargs) -> RebaseResult:
         upstream_branch=config.upstream_branch,
         **kwargs,
     )
+
+
+def _count_diff_lines(diff_text: str) -> tuple[int, int]:
+    """Count added and removed lines in a unified diff (lines starting with +/- excluding headers)."""
+    added = 0
+    removed = 0
+    for line in diff_text.splitlines():
+        if line.startswith("+") and not line.startswith("+++"):
+            added += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            removed += 1
+    return added, removed
+
+
+def _validate_resolution_magnitude(
+    ours_content: str,
+    resolved_content: str,
+    commit_diff: str,
+) -> tuple[bool, str]:
+    """
+    Validate that the resolution doesn't introduce more changes than the commit intended.
+
+    Compares the diff between ours→resolved against the original commit's diff.
+    If the resolution changes significantly more lines, it's likely over-resolved.
+
+    Returns (is_suspicious, reason).
+    """
+    if not commit_diff:
+        return False, ""
+
+    # Count lines changed in the original commit's diff for this file
+    commit_added, commit_removed = _count_diff_lines(commit_diff)
+    commit_delta = commit_added + commit_removed
+
+    # Count lines changed between ours and resolved
+    ours_lines = ours_content.splitlines()
+    resolved_lines = resolved_content.splitlines()
+
+    from difflib import unified_diff
+    resolution_diff = list(unified_diff(ours_lines, resolved_lines, lineterm=""))
+    res_added = sum(1 for l in resolution_diff if l.startswith("+") and not l.startswith("+++"))
+    res_removed = sum(1 for l in resolution_diff if l.startswith("-") and not l.startswith("---"))
+    res_delta = res_added + res_removed
+
+    if commit_delta == 0:
+        if res_delta > 0:
+            return True, f"commit has no changes for this file but resolution adds {res_delta} line(s)"
+        return False, ""
+
+    ratio = res_delta / commit_delta if commit_delta > 0 else float('inf')
+
+    # Heuristic: if resolution changes >3x what the commit intended, flag it
+    # Allow at least 5 extra lines of slack for context adjustments
+    if res_delta > max(commit_delta * 3, commit_delta + 5):
+        return True, (
+            f"resolution changes {res_delta} lines but commit only changes "
+            f"{commit_delta} lines ({ratio:.1f}x over-resolution)"
+        )
+
+    return False, ""
 
 
 def _resolve_cherry_pick_conflicts(
@@ -458,11 +535,35 @@ def _resolve_cherry_pick_conflicts(
         if file_log:
             logger.debug("  Recent commits for %s:\n%s", conflict.path, file_log)
 
-        result = resolve_conflict(config, conflict, pr_contexts)
+        commit_diff = git.get_commit_diff_for_file(commit.sha, conflict.path)
+        commit_stat = git.get_commit_stat(commit.sha)
+        if commit_diff:
+            logger.info("  Commit diff for %s: %d lines", conflict.path, commit_diff.count('\n'))
+        else:
+            logger.warning("  Could not retrieve commit diff for %s — resolution may be less precise", conflict.path)
+
+        result = resolve_conflict(config, conflict, pr_contexts,
+                                  commit_diff=commit_diff, commit_stat=commit_stat)
 
         if result is None:
             logger.error("  Failed to resolve %s", conflict.path)
             return None
+
+        # Validate resolution magnitude against the commit's intended changes
+        is_suspicious, suspicion_reason = _validate_resolution_magnitude(
+            conflict.ours, result.content, commit_diff,
+        )
+        if is_suspicious:
+            logger.warning(
+                "  ⚠ OVER-RESOLUTION detected in %s: %s",
+                conflict.path, suspicion_reason,
+            )
+            # Penalize confidence score — cap at 50% for suspicious resolutions
+            capped_confidence = min(result.confidence, 50)
+            reasoning = f"over-resolution: {suspicion_reason}"
+        else:
+            capped_confidence = result.confidence
+            reasoning = result.reasoning
 
         git.apply_resolution(conflict.path, result.content)
         round_resolved.append(conflict.path)
@@ -470,10 +571,12 @@ def _resolve_cherry_pick_conflicts(
         confidence_scores.append(FileConfidence(
             path=conflict.path,
             commit_sha=commit.sha[:8],
-            confidence=result.confidence,
-            reasoning=result.reasoning,
+            confidence=capped_confidence,
+            reasoning=reasoning,
         ))
-        logger.info("  Resolved: %s (confidence: %d%%)", conflict.path, result.confidence)
+        logger.info("  Resolved: %s (confidence: %d%%)", conflict.path, capped_confidence)
+        if is_suspicious:
+            logger.warning("  ⚠ Manual review recommended — %s", suspicion_reason)
 
     return round_resolved
 

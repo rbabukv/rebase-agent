@@ -24,24 +24,35 @@ You are a git conflict resolution expert. Your job is to resolve cherry-pick \
 conflicts by producing the correct merged file content.
 
 We are cherry-picking internal-only commits onto the latest upstream code. \
-The goal is to apply internal customizations on top of the current upstream state.
+The goal is to apply ONLY the specific changes from the cherry-picked commit \
+onto the current upstream state.
 
 You will be given:
 1. The file with conflict markers (<<<<<<< / ======= / >>>>>>>)
 2. The "ours" version (current branch — based on latest upstream)
 3. The "theirs" version (the internal commit being cherry-picked — contains custom changes)
 4. The common base version
-5. Context from past Pull Requests in the internal repo that modified this file
+5. **The original commit's diff for this file** — this shows EXACTLY what the \
+cherry-picked commit intended to change
+6. Context from past Pull Requests in the internal repo that modified this file
+
+## CRITICAL — Use the commit diff as ground truth:
+The commit diff tells you PRECISELY what lines the author added, removed, or \
+modified. Your resolution must apply ONLY those changes to the upstream ("ours") \
+version. Do NOT introduce any other differences between "ours" and "theirs" — \
+those are from prior commits, not this one.
 
 ## Key Principles:
-- **Preserve internal customizations**: The cherry-picked commit contains intentional \
-internal changes. Past PRs explain WHY those changes were made. Apply their intent \
-onto the current upstream code.
-- **Keep upstream state as the foundation**: The upstream version is the base. Internal \
-changes should be layered on top, not replace upstream improvements.
-- **Use PR context as clues**: Past PRs tell you which parts of the file are \
-intentionally different from upstream. Apply those intentional differences cleanly \
-onto the current upstream code.
+- **Apply ONLY this commit's changes**: The commit diff is the authoritative source \
+of what needs to change. If the diff adds one line, your resolution should add \
+exactly one line to the "ours" version. Nothing more, nothing less.
+- **Keep upstream ("ours") as the foundation**: Start from the "ours" version and \
+apply the specific changes from the commit diff onto it. Do NOT copy structure or \
+content from "theirs" that isn't part of this commit's diff.
+- **Locate the correct position**: When upstream reorganized code, the commit's \
+change may need to go to a different line number. Use surrounding context in the \
+diff (context lines starting with space) to locate where the change belongs in \
+the "ours" version.
 - **Maintain correctness**: The resolved file must be syntactically valid and \
 logically coherent. No leftover conflict markers.
 
@@ -70,13 +81,22 @@ You are a git conflict resolution expert. You will be given a single conflict \
 block extracted from a file during a cherry-pick operation.
 
 We are cherry-picking internal-only commits onto the latest upstream code. \
-The goal is to apply internal customizations on top of the current upstream state.
+The goal is to apply ONLY the specific changes from the cherry-picked commit \
+onto the current upstream state.
+
+## CRITICAL — Use the commit diff as ground truth:
+You will be given the original commit's diff showing EXACTLY what lines the \
+author intended to add/remove. Apply ONLY those changes to the "ours" (upstream) \
+side. Do NOT bring in other differences from "theirs" — those are from prior \
+commits, not this one.
 
 ## Key Principles:
-- **Preserve internal customizations**: The "theirs" side contains intentional \
-internal changes. Preserve their intent.
-- **Keep upstream state as the foundation**: The "ours" side is the latest upstream. \
-Internal changes should be layered on top.
+- **Apply ONLY this commit's changes**: The diff is the single source of truth. \
+If the diff adds one line, add exactly one line to "ours". Nothing more.
+- **Keep "ours" as the foundation**: Start from "ours" and apply the diff's \
+changes onto it.
+- **Locate correctly**: Code may have moved. Use diff context lines to find \
+the right position in "ours".
 - **Maintain correctness**: The resolved block must be syntactically valid and \
 logically coherent.
 
@@ -141,10 +161,17 @@ def _build_chunk_prompt(
     ctx_before: str,
     ctx_after: str,
     pr_contexts: list[PRContext],
+    commit_diff: str = "",
 ) -> str:
     """Build prompt for resolving a single conflict block."""
     parts = []
     parts.append(f"## File: `{filepath}` — Conflict block {block_idx}/{total_blocks}\n\n")
+
+    # Show the commit diff first — it's the ground truth
+    if commit_diff:
+        parts.append("### Original commit's diff for this file (GROUND TRUTH — apply exactly these changes):\n```diff\n")
+        parts.append(commit_diff)
+        parts.append("\n```\n\n")
 
     parts.append("### Context before conflict:\n```\n")
     parts.append(ctx_before)
@@ -172,19 +199,29 @@ def _build_chunk_prompt(
         parts.append("\n")
 
     parts.append(
-        "Resolve this conflict block. Output ONLY the resolved code that "
-        "replaces the entire conflict. No markers, no fences, no commentary."
+        "Resolve this conflict block by applying ONLY the changes from the commit "
+        "diff onto the OURS version. Do NOT bring in other differences from THEIRS. "
+        "Output ONLY the resolved code. No markers, no fences, no commentary."
     )
     return "".join(parts)
 
 
 def build_conflict_prompt(
-    conflict: ConflictedFile, pr_contexts: list[PRContext]
+    conflict: ConflictedFile, pr_contexts: list[PRContext],
+    commit_diff: str = "", commit_stat: str = "",
 ) -> str:
     """Build the user prompt with all context for Claude (full-file mode)."""
     parts = []
 
     parts.append(f"## Conflicted file: `{conflict.path}`\n")
+
+    # The commit diff is the MOST important input — show it first
+    if commit_diff:
+        parts.append("### Original commit's diff for this file (GROUND TRUTH — apply exactly these changes):\n```diff\n")
+        parts.append(commit_diff)
+        parts.append("\n```\n\n")
+        if commit_stat:
+            parts.append(f"Commit stats: {commit_stat}\n\n")
 
     parts.append("### File with conflict markers:\n```\n")
     parts.append(conflict.content_with_markers)
@@ -216,11 +253,13 @@ def build_conflict_prompt(
     else:
         parts.append(
             "### No past PR context available.\n"
-            "Resolve based on the conflict markers and version diffs above.\n"
+            "Resolve based on the commit diff and conflict markers above.\n"
         )
 
     parts.append(
-        "\nResolve this conflict now. Output ONLY the resolved file content."
+        "\nResolve this conflict. Your resolution MUST apply exactly the changes "
+        "shown in the commit diff onto the 'ours' version. Do NOT copy other "
+        "differences from 'theirs'. Output ONLY the resolved file content."
     )
     return "".join(parts)
 
@@ -442,9 +481,12 @@ def _resolve_full_file(
     conflict: ConflictedFile,
     pr_contexts: list[PRContext],
     max_retries: int = 3,
+    commit_diff: str = "",
+    commit_stat: str = "",
 ) -> ResolutionResult | None:
     """Try resolving the entire file at once (for small files)."""
-    prompt = build_conflict_prompt(conflict, pr_contexts)
+    prompt = build_conflict_prompt(conflict, pr_contexts,
+                                   commit_diff=commit_diff, commit_stat=commit_stat)
 
     for attempt in range(1, max_retries + 1):
         logger.info(
@@ -510,6 +552,8 @@ def resolve_conflict(
     conflict: ConflictedFile,
     pr_contexts: list[PRContext],
     max_retries: int = 3,
+    commit_diff: str = "",
+    commit_stat: str = "",
 ) -> ResolutionResult | None:
     """
     Resolve a conflicted file using Claude.
@@ -517,6 +561,10 @@ def resolve_conflict(
     For small files: sends the entire file for resolution.
     For large files: extracts individual conflict blocks, resolves each
     separately, and stitches the file back together.
+
+    Args:
+        commit_diff: The original commit's diff for this file (ground truth).
+        commit_stat: The commit's diffstat summary.
 
     Returns ResolutionResult with content, confidence score, and reasoning.
     """
@@ -526,13 +574,15 @@ def resolve_conflict(
     # Small file → full-file resolution
     if len(content) < LARGE_FILE_THRESHOLD:
         logger.info("Using full-file resolution for %s (%d chars)", conflict.path, len(content))
-        return _resolve_full_file(client, config, conflict, pr_contexts, max_retries)
+        return _resolve_full_file(client, config, conflict, pr_contexts, max_retries,
+                                  commit_diff=commit_diff, commit_stat=commit_stat)
 
     # Large file → chunk-based resolution
     blocks = _extract_conflict_blocks(content)
     if not blocks:
         logger.warning("No conflict blocks found in %s despite markers", conflict.path)
-        return _resolve_full_file(client, config, conflict, pr_contexts, max_retries)
+        return _resolve_full_file(client, config, conflict, pr_contexts, max_retries,
+                                  commit_diff=commit_diff, commit_stat=commit_stat)
 
     logger.info(
         "Using chunk-based resolution for %s (%d chars, %d conflict blocks)",
@@ -575,6 +625,7 @@ def resolve_conflict(
             ctx_before=ctx_before,
             ctx_after=ctx_after,
             pr_contexts=pr_contexts,
+            commit_diff=commit_diff,
         )
 
         result = _resolve_chunk(

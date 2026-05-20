@@ -325,6 +325,20 @@ class GitOperations:
         """Remove a file from the index and working tree during conflict resolution."""
         self._run("rm", "-f", filepath)
 
+    def get_commit_diff_for_file(self, commit_sha: str, filepath: str) -> str:
+        """Get the diff that a specific commit introduced for a single file."""
+        result = self._run("diff", f"{commit_sha}^..{commit_sha}", "--", filepath)
+        if result.returncode != 0:
+            return ""
+        return result.stdout.strip()
+
+    def get_commit_stat(self, commit_sha: str) -> str:
+        """Get the diffstat summary for a commit (files changed, insertions, deletions)."""
+        result = self._run("show", "--stat", "--format=", commit_sha)
+        if result.returncode != 0:
+            return ""
+        return result.stdout.strip()
+
     def get_branch_name(self) -> str:
         """Get the current branch name."""
         result = self._run("rev-parse", "--abbrev-ref", "HEAD")
